@@ -1,6 +1,6 @@
 #! python3
 # -*- encoding: utf-8 -*-
-'''
+"""
 Format logger output using python logging and colorlog module.
 
 Reference: https://github.com/jyesselm/dreem/blob/main/dreem/logger.py
@@ -9,7 +9,7 @@ Reference: https://github.com/jyesselm/dreem/blob/main/dreem/logger.py
 @Created:   2025/04/01 16:16
 @Author :   SwordJack
 @Contact:   https://github.com/SwordJack/
-'''
+"""
 
 # Here put the import lib.
 import os
@@ -20,19 +20,20 @@ class ArkError(Exception):
     pass
 
 def init_logger(name, log_outfile=None, testing_mode=False, start=False) -> logging.Logger:
-    '''Initialize a logger instance to '''
+    """Initialize a logger instance to """
     log_format = (
         "[%(asctime)s " "%(name)s " "%(funcName)s] " "%(levelname)s " "%(message)s"
     )
-    bold_seq = "\033[1m"
-    colorlog_format = f"{bold_seq}" "%(log_color)s" f"{log_format}"
+    # bold_seq = "\033[1m"
+    # colorlog_format = f"{bold_seq}" "%(log_color)s" f"{log_format}"
+    colorlog_format = "%(log_color)s" f"{log_format}"
     logger = logging.getLogger(name)
     # colorlog.basicConfig(format=colorlog_format, datefmt="%H:%M")
     handler = colorlog.StreamHandler()
     handler.setFormatter(
         colorlog.ColoredFormatter(
             colorlog_format,
-            datefmt="%H:%M",
+            datefmt="%Y-%m-%d %H:%M:%S",
             reset=True,
             log_colors={
                 "DEBUG": "cyan",
@@ -73,6 +74,8 @@ def str_to_log_level(s: str):
         return logging.DEBUG
     elif s == "warn":
         return logging.WARN
+    elif s == "warning":
+        return logging.WARNING
     elif s == "error":
         return logging.ERROR
     elif s == "critical":
@@ -80,4 +83,11 @@ def str_to_log_level(s: str):
     else:
         raise ValueError("unknown log level: {}".format(s))
 
-logger = init_logger("ARK", None, start=True)
+LOGGER = init_logger("ARK", None, start=True)
+
+if __name__ == "__main__":
+    LOGGER.info("Test ARK logger info.")
+    LOGGER.warning("Test ARK logger warning.")
+    LOGGER.error("Test ARK logger error.")
+    LOGGER.exception("Test ARK logger exception.")
+    LOGGER.critical("Test ARK logger critical.")
