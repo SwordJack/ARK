@@ -24,7 +24,7 @@ def make_directory(directory_path: str) -> None:
     if not path.isdir(directory_path):
         os.makedirs(directory_path, exist_ok=True)
     else:
-        LOGGER.warning(f"`{directory_path}` already exists. Nothing to make.")
+        LOGGER.debug(f"`{directory_path}` already exists. Nothing to make.")
     return
 
 def is_empty_directory(dir_path: str) -> bool:
@@ -32,7 +32,7 @@ def is_empty_directory(dir_path: str) -> bool:
     if path.isdir(dir_path):
         return not os.listdir(dir_path)
     else:
-        LOGGER.warning(f"`{dir_path}` doesn't exist.")
+        LOGGER.debug(f"`{dir_path}` doesn't exist.")
         return False
 
 def remove_directory(directory_path: str, empty_only: bool = True) -> None:
@@ -44,11 +44,11 @@ def remove_directory(directory_path: str, empty_only: bool = True) -> None:
     """
     if path.isdir(directory_path):
         if empty_only and not is_empty_directory(directory_path):
-            LOGGER.warning(f"`{directory_path}` is not empty. Nothing to remove unless setting `empty_only=False`.")
+            LOGGER.debug(f"`{directory_path}` is not empty. Nothing to remove unless setting `empty_only=False`.")
         else:
             shutil.rmtree(directory_path)
     else:
-        LOGGER.warning(f"`{directory_path}` doesn't exist. Nothing to remove")
+        LOGGER.debug(f"`{directory_path}` doesn't exist. Nothing to remove")
     return
 
 # endregion
@@ -67,7 +67,7 @@ def remove_file(filepath: str) -> None:
     if path.lexists(filepath):
         os.remove(filepath)
     else:
-        LOGGER.warning(f"`{filepath}` cannot be found. Nothing to remove.")
+        LOGGER.debug(f"`{filepath}` cannot be found. Nothing to remove.")
     return
 
 

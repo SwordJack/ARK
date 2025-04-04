@@ -162,8 +162,7 @@ class ExecutionEntity:
         if (not self.is_executable):
             return
         if (not self.sqlite_filepath):
-            LOGGER.warning(f"No SQLite filepath specified, so the execution status of {self.identifier} is not synchronized!")
-            LOGGER.warning("If this warning appears during initialization, ignore it.")
+            LOGGER.warning(f"No SQLite filepath specified, so the execution status of {self.identifier} is not synchronized! (If during initialization, ignore it.)")
             return
         database_session = self.create_database_session()
         if (database_session):

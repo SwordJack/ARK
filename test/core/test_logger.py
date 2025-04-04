@@ -11,6 +11,7 @@ from ark import LOGGER
 # Here put the import lib.
 
 def test_logger():
+    LOGGER.debug("Test ARK logger debug.")
     LOGGER.info("Test ARK logger info.")
     LOGGER.warning("Test ARK logger warning.")
     LOGGER.error("Test ARK logger error.")
