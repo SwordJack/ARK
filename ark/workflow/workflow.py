@@ -1315,12 +1315,9 @@ class IterativeWorkUnit(ControlWorkUnit):
         self.child_execution_entities = self.sub_workflows
         self.run_in_subfolders = False
 
-    def actualize(self) -> IterativeWorkUnit:
-        """Actualize an instance of IterativeWorkUnit from an initialized instance of LoopWorkUnit or ClusterBatchWorkUnit
-        to have it ready for execution.
-
-        Returns:
-            IterativeWorkUnit: An instance of IterativeWorkUnit initialized with the given configuration.
+    def actualize(self):
+        """Actualize an instance of IterativeWorkUnit from an initialized instance 
+        of LoopWorkUnit or ClusterBatchWorkUnit to have it ready for execution.
         """
         # Initialize the class.
         self.status = StatusCode.INITIALIZING
@@ -1348,6 +1345,7 @@ class IterativeWorkUnit(ControlWorkUnit):
         # Add error message from placeholder workflow initialization.
         if (placeholder_sub_workflow.error_msg_list):
             self.error_msg_list += placeholder_sub_workflow.error_msg_list
+        return
 
     def reload(self, unit_dict: dict, placeholder_api: Callable, iterable_data_label: str, iterative_body_datum_label: str):
         """
@@ -1529,8 +1527,7 @@ class LoopWorkUnit(IterativeWorkUnit):
         return unit
 
     def reload(self, unit_dict: dict):
-        """
-        Reloads the LoopWorkUnit instance with updated configuration.
+        """Reloads the LoopWorkUnit instance with updated configuration.
 
         This method is used when a user wants to reload the entire task and checks 
         if there are any changes in the parameter values. If the WorkUnit's status 

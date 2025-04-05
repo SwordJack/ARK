@@ -13,16 +13,14 @@ from typing import Any, List, Union
 UNIT_API_MAPPER = dict()
 
 class WidgetAPI:
-    """
-    Provides static methods for simple data processing tasks such as
+    """Provides static methods for simple data processing tasks such as
     retrieving items and attributes from various Python objects.
     This utility class enhances data access in a generalized manner.
     """
     
     @staticmethod
     def get_item(obj: Union[list, tuple, dict, str], index: Any = 0) -> Any:
-        """
-        Retrieves an item from a given object (list, tuple, dictionary, or string)
+        """Retrieves an item from a given object (list, tuple, dictionary, or string)
         using the provided index or key.
 
         Args:
@@ -48,8 +46,7 @@ class WidgetAPI:
 
     @staticmethod
     def get_attr(obj: Any, attr_chain: List[str]) -> Any:
-        """
-        Retrieves a nested attribute from an object based on a chain of attribute names.
+        """Retrieves a nested attribute from an object based on a chain of attribute names.
 
         Args:
             obj (Any): The object from which attributes are to be fetched.

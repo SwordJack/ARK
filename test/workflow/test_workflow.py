@@ -9,79 +9,17 @@
 
 # Here put the import lib.
 from os import path
-from datetime import datetime
-from random import randint
 import pytest
 
-from ark import LOGGER
+from ark import LOGGER, file_system as fs
 from ark.workflow import ExecutionEntity, WorkFlow, WorkUnit, GeneralWorkUnit
-from ark.workflow import UNIT_API_MAPPER, StatusCode
+from ark.workflow import StatusCode
+
+from .pseudo_api import UNIT_API_MAPPER
 
 current_file_directory = path.dirname(__file__)
 DATA_DIR = path.join(current_file_directory, "data")
 WORK_DIR = path.join(current_file_directory, "work")
-
-class PseudoAPI():
-    """This class acts as a container to save some static pseudo SCIENCE APIs for test."""
-
-    @classmethod
-    def test_kwargs(cls, x: str, **kwargs):
-        '''This function is to test kwargs inspection only.'''
-        result = x
-        for key, value in kwargs.items():
-            result += f'\n {key} = {value}'
-        return result
-    
-    @classmethod
-    def union_values(cls, **kwargs) -> str:
-        """This function prints out all the keyword argument values and return the printed value."""
-        unioned_value = list(map(str, kwargs.values()))
-        LOGGER.info(f"Unioned Value is: {unioned_value}")
-        return unioned_value
-    
-    @classmethod
-    def print_value(cls, value) -> None:
-        print(value)
-        return
-    
-    @classmethod
-    def checkpoint_fruit_producer(cls, fruit_name: str) -> None:
-        """This function produce input value for checkpoint functions.
-        
-        Args:
-            fruit_name (str): The name of the fruit you want to produce.
-        
-        Returns:
-            A generated string value containing the `fruit_name` you enter.
-        """
-        brands = ["Zhang, San", "Li, Si", "Wang, Wu", "Ma, Liu"]
-        current_time = datetime.now()
-        result = f"{brands[randint(0, len(brands)-1)]}'s {fruit_name}, produced at {current_time.strftime('%Y-%m-%d_%H:%M')}."
-        return result
-        
-    @classmethod
-    def checkpoint_apple_eater_error(cls, test_str: str) -> None:
-        """This function act as a checkpoint to test if the reload (continue computing) functions normally.
-        
-        Args:
-            test_str (str): A string value as input for checkpoint.
-
-        Raises:
-            ValueError: If the `test_str` does not contain `apple`.
-        """
-        LOGGER.info(f"I received {test_str}...")
-        if ("apple" in test_str):
-            return
-        else:
-            raise ValueError("I need apples!")
-
-UNIT_API_MAPPER.update({
-    "test_kwargs": PseudoAPI.test_kwargs,
-    "print": PseudoAPI.print_value,
-    "union_values": PseudoAPI.union_values,
-    "checkpoint_producer": PseudoAPI.checkpoint_fruit_producer,
-    "checkpoint_error": PseudoAPI.checkpoint_apple_eater_error
-})
 
 def test_workunit_checkpoint_producer(caplog):
     """A test for workunit."""
@@ -97,9 +35,10 @@ def test_workunit_checkpoint_producer(caplog):
     key, return_value = workunit.execute()
     assert key == "producer"
     assert fruit in return_value
+    return
 
 def test_workunit_self_inspection_unrecognized_api(caplog):
-    '''A test for unrecognized API.'''
+    """A test for unrecognized API."""
     unit_dict = {
         "api" : "missing_api",
         "store_as" : "missing",
@@ -110,10 +49,11 @@ def test_workunit_self_inspection_unrecognized_api(caplog):
     with pytest.raises(KeyError) as e:    # The KeyError is expected to be raised.
         workunit = WorkUnit.from_dict(unit_dict=unit_dict, debug=True)
         assert workunit.status == StatusCode.FAILED_INITIALIZATION
-    assert 'cannot be mapped' in caplog.text.lower()
+    assert '`missing_api` cannot be mapped' in caplog.text.lower()
+    return
 
 def test_workunit_self_inspection_missing_args(caplog):
-    '''A test for missing argument(s).'''
+    """A test for missing argument(s)."""
     unit_dict = {
         "api" : "checkpoint_producer",
         "store_as" : "producer",
@@ -125,3 +65,53 @@ def test_workunit_self_inspection_missing_args(caplog):
         workunit = WorkUnit.from_dict(unit_dict=unit_dict, debug=True)
         assert workunit.status == StatusCode.FAILED_INITIALIZATION
     assert 'missing required argument' in caplog.text.lower()
+    return
+
+def test_workflow_from_json_filepath(caplog):
+    """Test initializing and executing Workflow from JSON filepath."""
+    json_filepath = f'{DATA_DIR}/workflow_pseudo_loop.json'
+    workflow = WorkFlow.from_json_filepath(json_filepath=json_filepath)
+    workflow.execute()
+    fs.remove_directory(WORK_DIR)
+    # print(workflow.intermediate_data_mapper)
+    assert "watermelon" in workflow.intermediate_data_mapper["producer_3"]
+    assert hasattr(workflow.locate_by_identifier("loop@4"), "sub_workflows")      # The 5th workunit is a LoopWorkUnit.
+    assert workflow.locate_by_identifier("workflow@4:loop_0").outer_data_mappers[-2] is workflow.intermediate_data_mapper    # The inner workflows' outer_mappers is cited from the intermediate_data_mapper of outer workflow.
+    return
+
+def test_general_from_json_filepath(caplog):
+    """Test initializing and executing GeneralWorkunit from a json file."""
+    json_filepath = f'{DATA_DIR}/general_pseudo_loop.json'
+    general = GeneralWorkUnit.from_json_filepath(json_filepath=json_filepath, working_directory=WORK_DIR)
+    assert "success" in caplog.text     # Indicate successful initialization.
+    assert general.status == StatusCode.READY_TO_START
+    general.execute()
+    assert general.status == StatusCode.EXIT_WITH_ERROR_IN_INNER_UNITS
+    assert general.locate_by_identifier("workflow@4:loop_0").status == StatusCode.EXIT_OK
+    assert general.locate_by_identifier("workflow@4:loop_1").status == StatusCode.EXIT_WITH_ERROR_IN_INNER_UNITS
+    assert general.locate_by_identifier("checkpoint_error@4:loop_1:0").status == StatusCode.EXIT_WITH_ERROR
+    fs.remove_directory(WORK_DIR, empty_only=False)
+    return
+
+def test_general_reload_pass(caplog):
+    """Test reloading a GeneralWorkUnit with a data mapper to cause updates."""
+    json_filepath = f'{DATA_DIR}/general_pseudo_loop.json'
+    general = GeneralWorkUnit.from_json_filepath(json_filepath=json_filepath, working_directory=WORK_DIR, save_snapshot=True)
+    assert "success" in caplog.text     # Indicate successful initialization.
+    general.execute()
+    assert general.status == StatusCode.EXIT_WITH_ERROR_IN_INNER_UNITS
+    assert general.locate_by_identifier("workflow@4:loop_0").status == StatusCode.EXIT_OK
+    general.reload_json_filepath(json_filepath=json_filepath, data_mapper_for_reload={
+        "fruit_1": "pear",
+        "fruit_2": "apple",
+    })
+    assert general.status == StatusCode.SUSPECIOUS_UPDATES
+    assert general.locate_by_identifier("loop@4").status == StatusCode.SUSPECIOUS_UPDATES
+    assert not general.locate_by_identifier("checkpoint_error@4:loop_1:0")  # This workunit is erased during reloading since it is affected.
+    general.execute()
+    assert general.status == StatusCode.EXIT_WITH_ERROR_IN_INNER_UNITS
+    assert general.locate_by_identifier("workflow@4:loop_0").status == StatusCode.EXIT_WITH_ERROR_IN_INNER_UNITS
+    assert general.locate_by_identifier("workflow@4:loop_1").status == StatusCode.EXIT_OK
+    assert general.locate_by_identifier("checkpoint_error@4:loop_1:0").status == StatusCode.EXIT_OK
+    fs.remove_directory(WORK_DIR, empty_only=False)
+    return
