@@ -49,7 +49,7 @@ def test_workunit_self_inspection_unrecognized_api(caplog):
     with pytest.raises(KeyError) as e:    # The KeyError is expected to be raised.
         workunit = WorkUnit.from_dict(unit_dict=unit_dict, debug=True)
         assert workunit.status == StatusCode.FAILED_INITIALIZATION
-    assert '`missing_api` cannot be mapped' in caplog.text.lower()
+    assert "`missing_api` cannot be mapped" in caplog.text.lower()
     return
 
 def test_workunit_self_inspection_missing_args(caplog):
@@ -64,24 +64,24 @@ def test_workunit_self_inspection_missing_args(caplog):
     with pytest.raises(ValueError) as e:    # The ValueError is expected to be raised.
         workunit = WorkUnit.from_dict(unit_dict=unit_dict, debug=True)
         assert workunit.status == StatusCode.FAILED_INITIALIZATION
-    assert 'missing required argument' in caplog.text.lower()
+    assert "missing required argument" in caplog.text.lower()
     return
 
 def test_workflow_from_json_filepath(caplog):
     """Test initializing and executing Workflow from JSON filepath."""
-    json_filepath = f'{DATA_DIR}/workflow_pseudo_loop.json'
+    json_filepath = path.join(DATA_DIR, "workflow_pseudo_loop.json")
     workflow = WorkFlow.from_json_filepath(json_filepath=json_filepath)
     workflow.execute()
     fs.remove_directory(WORK_DIR)
     # print(workflow.intermediate_data_mapper)
     assert "watermelon" in workflow.intermediate_data_mapper["producer_3"]
-    assert hasattr(workflow.locate_by_identifier("loop@4"), "sub_workflows")      # The 5th workunit is a LoopWorkUnit.
+    assert hasattr(workflow.locate_by_identifier("loop@4"), "sub_workflows")      # The 5th workunit is a LoopWorkUnit instance.
     assert workflow.locate_by_identifier("workflow@4:loop_0").outer_data_mappers[-2] is workflow.intermediate_data_mapper    # The inner workflows' outer_mappers is cited from the intermediate_data_mapper of outer workflow.
     return
 
 def test_general_from_json_filepath(caplog):
     """Test initializing and executing GeneralWorkunit from a json file."""
-    json_filepath = f'{DATA_DIR}/general_pseudo_loop.json'
+    json_filepath = path.join(DATA_DIR, "general_pseudo_loop.json")
     general = GeneralWorkUnit.from_json_filepath(json_filepath=json_filepath, working_directory=WORK_DIR)
     assert "success" in caplog.text     # Indicate successful initialization.
     assert general.status == StatusCode.READY_TO_START
@@ -91,6 +91,15 @@ def test_general_from_json_filepath(caplog):
     assert general.locate_by_identifier("workflow@4:loop_1").status == StatusCode.EXIT_WITH_ERROR_IN_INNER_UNITS
     assert general.locate_by_identifier("checkpoint_error@4:loop_1:0").status == StatusCode.EXIT_WITH_ERROR
     fs.remove_directory(WORK_DIR, empty_only=False)
+    return
+
+def test_general_read_architecture(caplog):
+    """Test reading the schema of the configuration json/unit_dict."""
+    json_filepath = path.join(DATA_DIR, "general_pseudo_loop.json")
+    general = GeneralWorkUnit.from_json_filepath(json_filepath=json_filepath, working_directory=WORK_DIR, overwrite_database=True, debug=True)
+    assert "general/loop/print" in general.architecture
+    assert "general/checkpoint_producer" in general.architecture
+    fs.remove_directory(WORK_DIR)
     return
 
 def test_general_reload_pass(caplog):

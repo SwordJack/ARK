@@ -719,7 +719,7 @@ class WorkUnit(ExecutionEntity):
         super().__init__(working_directory=working_directory, debug=debug, locator=locator, sqlite_filepath=sqlite_filepath)
         # Initialize attributes in the constructor
         # to prevent them from being considered as class attributes.
-        self.architecture = __class__.read_architecture(unit_dict=unit_dict)
+        self.architecture = self.read_architecture(unit_dict=unit_dict)
         self.api_key = unit_dict.get(WORKUNIT_API_NAME_KEY, str())
         self.return_key = unit_dict.get(WORKUNIT_RETURN_VALUE_KEY, None)
         self.args_dict_input = unit_dict.get(WORKUNIT_ARGUMENT_LIST_KEY, dict())
@@ -734,28 +734,34 @@ class WorkUnit(ExecutionEntity):
             self.workflow = workflow
         return
     
-    @staticmethod
-    def read_architecture(unit_dict: dict, indent: int = 0):
+    @classmethod
+    def read_architecture(cls, unit_dict: dict, result=None, path=None):
         """
         Recursively reads a nested unit_dict dictionary and extracts 'api' values.
 
         Args:
-            schema (dict): The nested dictionary schema.
-            indent (int): The current indentation level (number of spaces).
+            unit_dict (dict): The nested dictionary schema.
+            result (dict): The accumulator dictionary for storing the structured results.
+            path (str): The path string representing the hierarchical structure of apis.
 
         Returns:
-            str: A formatted string representing the 'api' values at each level.
+            result (dict): A structured dictionary representing the 'api' values at each level with their paths.
         """
-        result = ""
+        if result is None:
+            result = {}
+        if path is None:
+            path = ""
 
-        # Check if 'api' key exists in the current level
+        # Process the current level if 'api' key exists
         if WORKUNIT_API_NAME_KEY in unit_dict:
-            result += "·" + "->" * indent + f" {unit_dict[WORKUNIT_API_NAME_KEY]}\n"
+            current_path = f"{path}/{unit_dict[WORKUNIT_API_NAME_KEY]}".strip('/')
+            result[current_path] = unit_dict[WORKUNIT_API_NAME_KEY]
         
+        # Process nested 'workunits' if they exist
         # If 'args' key exists and it has a 'workunits' key, process each item in 'workunits'
         if (WORKUNIT_ARGUMENT_LIST_KEY in unit_dict) and (CONTROL_BODY_WORKUNITS_LABEL in unit_dict[WORKUNIT_ARGUMENT_LIST_KEY]):
             for workunit in unit_dict[WORKUNIT_ARGUMENT_LIST_KEY][CONTROL_BODY_WORKUNITS_LABEL]:
-                result += __class__.read_architecture(workunit, indent + 1)
+                cls.read_architecture(workunit, result, current_path)
 
         return result
 
@@ -2070,7 +2076,7 @@ class GeneralWorkUnit(ControlWorkUnit):
     def deprecate_and_delete(self) -> None:
         """A GeneralWorkunit instance cannot be deprecated or deleted."""
         # LOGGER.warning("A GeneralWorkunit instance cannot be deprecated or deleted.")
-        self.workflow.deprecate_and_delete()
+        self.sub_workflow.deprecate_and_delete()
         super().deprecate_and_delete()
         return
    
