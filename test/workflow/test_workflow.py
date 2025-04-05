@@ -104,7 +104,7 @@ def test_general_read_architecture(caplog):
 
 def test_general_reload_pass(caplog):
     """Test reloading a GeneralWorkUnit with a data mapper to cause updates."""
-    json_filepath = f'{DATA_DIR}/general_pseudo_loop.json'
+    json_filepath = path.join(DATA_DIR, "general_pseudo_loop.json")
     general = GeneralWorkUnit.from_json_filepath(json_filepath=json_filepath, working_directory=WORK_DIR, save_snapshot=True)
     assert "success" in caplog.text     # Indicate successful initialization.
     general.execute()
@@ -128,7 +128,7 @@ def test_general_reload_pass(caplog):
 def test_general_dump_load_and_change_varname(caplog):
     """Test dumping pickle when facing error, and then loading pickle to continue computing.
     Varname are modified during reloading, so the old varname should be replaced by the new varname."""
-    json_filepath_error = f"{DATA_DIR}/general_pseudo_loop.json"
+    json_filepath_error = path.join(DATA_DIR, "general_pseudo_loop.json")
     general = GeneralWorkUnit.from_json_filepath(json_filepath=json_filepath_error, working_directory=WORK_DIR, save_snapshot=True, overwrite_database=True)
     general.execute()
 
@@ -143,7 +143,7 @@ def test_general_dump_load_and_change_varname(caplog):
     pickle_filepath = general.latest_pickle_filepath
 
     # In this json file, the varname is changed.
-    json_filepath_pass = f"{DATA_DIR}/general_pseudo_loop_reload.json"
+    json_filepath_pass = path.join(DATA_DIR, "general_pseudo_loop_reload.json")
 
     # Read the pickle file.
     reloaded_general = GeneralWorkUnit.load_snapshot_file(filepath=pickle_filepath)
@@ -169,4 +169,22 @@ def test_general_dump_load_and_change_varname(caplog):
     assert checkpoint.status == StatusCode.EXIT_OK
 
     fs.remove_directory(WORK_DIR, empty_only=False)
+    return
+
+def test_general_execute_full_workflow(caplog):
+    """Execute the full workflow."""
+    json_filepath = path.join(DATA_DIR, "general_pseudo_loop.json")
+
+    data_mapper_for_init = {
+        "fruit_1": "apple",
+        "fruit_2": "apple",
+        "fruit_3": "apple",
+    }
+    general = GeneralWorkUnit.from_json_filepath(
+        json_filepath=json_filepath, working_directory=WORK_DIR, 
+        overwrite_database=True, data_mapper_for_init=data_mapper_for_init,
+        debug=True)
+    fs.remove_directory(WORK_DIR)
+    assert general.status == StatusCode.READY_TO_START
+    assert general.sub_workflow.outer_data_mappers[-1].get("fruit_1", None) == "apple"
     return
