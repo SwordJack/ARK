@@ -115,3 +115,49 @@ def test_general_reload_pass(caplog):
     assert general.locate_by_identifier("checkpoint_error@4:loop_1:0").status == StatusCode.EXIT_OK
     fs.remove_directory(WORK_DIR, empty_only=False)
     return
+
+def test_general_dump_load_and_change_varname(caplog):
+    """Test dumping pickle when facing error, and then loading pickle to continue computing.
+    Varname are modified during reloading, so the old varname should be replaced by the new varname."""
+    json_filepath_error = f"{DATA_DIR}/general_pseudo_loop.json"
+    general = GeneralWorkUnit.from_json_filepath(json_filepath=json_filepath_error, working_directory=WORK_DIR, save_snapshot=True, overwrite_database=True)
+    general.execute()
+
+    loop_body = general.locate_by_identifier(identifier="workflow@4:loop_1")
+    print_unit = general.locate_by_identifier(identifier="print@4:loop_1:1")
+    checkpoint = general.locate_by_identifier(identifier="checkpoint_error@4:loop_2:0")
+    assert loop_body.status == StatusCode.EXIT_WITH_ERROR_IN_INNER_UNITS
+    assert print_unit.status == StatusCode.EXIT_OK
+    assert checkpoint.status == StatusCode.EXIT_WITH_ERROR
+
+    # Get the pickle filepath.
+    pickle_filepath = general.latest_pickle_filepath
+
+    # In this json file, the varname is changed.
+    json_filepath_pass = f"{DATA_DIR}/general_pseudo_loop_reload.json"
+
+    # Read the pickle file.
+    reloaded_general = GeneralWorkUnit.load_snapshot_file(filepath=pickle_filepath)
+    reloaded_general.reload_json_filepath(json_filepath=json_filepath_pass)
+
+    producer_1 = reloaded_general.locate(ExecutionEntity.get_locator(identifier="checkpoint_producer@0"))
+    producer_2 = reloaded_general.locate(ExecutionEntity.get_locator(identifier="checkpoint_producer@1"))
+    assert producer_1.status == StatusCode.EXIT_OK
+    assert producer_2.status == StatusCode.SUSPECIOUS_UPDATES
+
+    reloaded_general.execute()
+
+    loop_body = reloaded_general.locate_by_identifier(identifier="workflow@4:loop_1")
+    print_unit = reloaded_general.locate_by_identifier(identifier="print@4:loop_1:1")
+    checkpoint = reloaded_general.locate_by_identifier(identifier="checkpoint_error@4:loop_2:0")
+    
+    # The `producer_3` should be replaced by `producer_reload`.
+    assert reloaded_general.sub_workflow.intermediate_data_mapper.get("producer_reload", None)
+    assert not reloaded_general.sub_workflow.intermediate_data_mapper.get("producer_3", None)
+
+    assert loop_body.status == StatusCode.EXIT_OK
+    assert print_unit.status == StatusCode.EXIT_OK
+    assert checkpoint.status == StatusCode.EXIT_OK
+
+    fs.remove_directory(WORK_DIR, empty_only=False)
+    return

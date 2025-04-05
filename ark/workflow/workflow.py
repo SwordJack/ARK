@@ -306,8 +306,8 @@ class ExecutionEntity:
                 raise exc
         return filepath
     
-    @staticmethod
-    def load_snapshot_file(filepath: str) -> ExecutionEntity:
+    @classmethod
+    def load_snapshot_file(cls, filepath: str) -> ExecutionEntity | GeneralWorkUnit:
         """
         Loads a ExecutionEntity instance from a snapshot file.
 
