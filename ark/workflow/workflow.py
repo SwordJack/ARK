@@ -1,6 +1,23 @@
 #! python3
 # -*- encoding: utf-8 -*-
 """
+Workflow Interpreter.
+
+This code was disassembled from elsewhere because it was no longer considered useful there.
+
+Resolved issues of this framework are listed as follows.
+
+TODO (Zhong): Typing type annotation inspection. (Completed 2024-02-16 23:16 UTC-6)
+TODO (Zhong): Annotation inspection in intermediate_data_mapper. (Completed 2024-03-01 01:00 UTC-6)
+TODO (Zhong): APIs entitled `loop`. (Completed 2024-02-26 20:01 UTC-6)
+TODO (Zhong): How to handle intermediate data transfer between parent and child workflows. Child workflow should be able to read the data in parent flow. (Completed 2024-02-28 06:06 UTC-6)
+TODO (Zhong): Continue computing. (Completed 2024-03-20 01:15 UTC-5)
+TODO (Zhong): How to indicate error from inner units. (Completed 2024-03-13 19:00 UTC-5)
+TODO (Zhong): Cluster Batch.
+TODO (Zhong): Data Output to excel (enzy_htp.core.file_system.write_data_to_excel, Completed 2024-05-12 19:50 UTC-5). 
+TODO (Zhong): How to lower the memeory cost due to inherited_data_mapper? (Use outer_data_mappers instead, Completed 2024-09-10 18:18).
+TODO (Zhong): How to optimize the return value of workflow.execute().
+
 @File    :   workflow.py
 @Created :   2025/04/01 16:17
 @Author  :   SwordJack

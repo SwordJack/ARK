@@ -172,7 +172,7 @@ def test_general_dump_load_and_change_varname(caplog):
     return
 
 def test_general_execute_full_workflow(caplog):
-    """Execute the full workflow."""
+    """Initialize the full workflow."""
     json_filepath = path.join(DATA_DIR, "general_pseudo_loop.json")
 
     data_mapper_for_init = {
