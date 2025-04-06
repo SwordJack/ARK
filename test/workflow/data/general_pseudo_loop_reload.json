@@ -1,0 +1,64 @@
+{
+  "api": "general",
+  "store_as": "general",
+  "args": {
+    "fruit_1": "apple",
+    "fruit_2": "apple",
+    "fruit_reload": "apple",
+    "workunits": [
+      {
+        "api": "checkpoint_producer",
+        "store_as": "producer_1",
+        "args": {
+          "fruit_name": "`fruit_1`"
+        }
+      },
+      {
+        "api": "checkpoint_producer",
+        "store_as": "producer_2",
+        "args": {
+          "fruit_name": "`fruit_2`"
+        }
+      },
+      {
+        "api": "checkpoint_producer",
+        "store_as": "producer_reload",
+        "args": {
+          "fruit_name": "`fruit_reload`"
+        }
+      },
+      {
+        "api": "union_values",
+        "store_as": "unioned_values",
+        "args": {
+          "producer_1": "`producer_1`",
+          "producer_2": "`producer_2`",
+          "producer_3": "`producer_reload`"
+        }
+      },
+      {
+        "api": "loop",
+        "store_as": "loop_unit_lv0",
+        "args": {
+          "loop_data": "`unioned_values`",
+          "loop_datum_varname": "unioned_value",
+          "workunits": [
+            {
+              "api": "checkpoint_error",
+              "store_as": "checkpoint_error",
+              "args": {
+                "test_str": "`unioned_value`"
+              }
+            },
+            {
+              "api": "print",
+              "args": {
+                "value": "`unioned_value`"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
