@@ -47,7 +47,7 @@ Reference: https://github.com/jyesselm/dreem/blob/main/dreem/logger.py
 - 本项目通过 Git 进行版本控制。
 - 项目主分支为 [`main`](https://github.com/SwordJack/ARK/tree/main) 分支，为本项目对外发布或供外部项目应用的代码版本，目前由本项目的所有者控制。
 - 项目的开发一般情况下围绕 [`develop`](https://github.com/SwordJack/ARK/tree/develop) 分支进行，开发者请基于此分支创建新分支进行开发，并提交 [Pull Request](https://github.com/SwordJack/ARK/pulls) 以申请将所创建的分支合并入 `develop` 分支中。
-- 开发者新创建的分支，其命名规范为：`<名字>/<类型>_<描述>`，例如：Tom 想要给项目添加一个吃西瓜的功能，那么，他就可以如此命名他的分支：`tom/feature_eat_watermelon`。
+- 开发者新创建的分支，其命名规范为：`<名字>/<类型>_<描述>`，例如：**Tom** 想要给项目添加一个**吃西瓜（eat watermelon）**的功能，那么，他就可以如此命名他的分支：`tom/feature_eat_watermelon`。
 - 分支的类型有以下若干种：
 
 | 前缀        | 全名          | 含义                                                        |
