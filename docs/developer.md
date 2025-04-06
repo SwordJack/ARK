@@ -9,7 +9,7 @@
 - 汉语 [developer.zh-cn.md](developer.zh-cn.md)
 - English [developer.md](developer.md)
 
-## 源代码
+## Source Code
 
 ### About Directories
 
@@ -48,8 +48,7 @@ Reference: https://github.com/jyesselm/dreem/blob/main/dreem/logger.py
 - The main branch of the project is the [`main`](https://github.com/SwordJack/ARK/tree/main) branch, which is the code version released to the public or used by external projects. It is currently controlled by the owner of the project.
 - Project development is generally carried out around the [`develop`](https://github.com/SwordJack/ARK/tree/develop) branch. Developers should create new branches based on this branch for development and submit a [Pull Request](https://github.com/SwordJack/ARK/pulls) to apply for merging the created branch into the `develop` branch.
 - The naming convention for the newly created branch by the developer is: `<name>/<type>_<description>`. For example, if Tom wants to add a `feature` of `eating watermelon` to the project, he can name his branch as: `tom/feature_eat_watermelon`.
-
-* There are several types of branches:
+- There are several types of branche prefixes:
 
 | Prefix      | Full name     | Meaning                                                                           |
 | ----------- | ------------- | --------------------------------------------------------------------------------- |
@@ -57,3 +56,5 @@ Reference: https://github.com/jyesselm/dreem/blob/main/dreem/logger.py
 | `fix_*`     | fix           | Fix a bug (low priority, will be merged into `develop`)                           |
 | `hotfix_*`  | hot fix       | Urgently fix a serious bug (high priority, should be merged directly into `main`) |
 | `docs_*`    | documentation | Add or improve documentation content, multilingual content, etc. to the project   |
+
+- When a branch is merged, it will be renamed: for example, after the `tom/feature_eat_watermelon` branch is merged, it will be renamed to `zarchive/tom/feature_eat_watermelon` to indicate that this branch has completed its mission and should no longer be activated.
