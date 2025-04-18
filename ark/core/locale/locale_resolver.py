@@ -31,7 +31,7 @@ class LocaleResolver:
     }
 
     @staticmethod
-    def parse_phone_number(raw_phone: str, region_hint: str = "US") -> Optional[phonenumbers.PhoneNumber]:
+    def parse_phone_number(raw_phone: str, region_hint: str = "CN") -> Optional[phonenumbers.PhoneNumber]:
         """Parses and validates a phone number.
 
         Args:
