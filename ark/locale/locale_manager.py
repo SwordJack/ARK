@@ -18,7 +18,7 @@ from .country import get_country_by_alpha2, get_language_by_alpha2
 class LocaleManager:
     """Utility class to resolve locale/language from phone number and validate locale codes."""
 
-    # You can expand this map as needed
+    # Expand this map as needed
     DEFAULT_LOCALE_MAP = {
         "CN": "zh_cn",
         "HK": "zh_hk",
@@ -33,8 +33,14 @@ class LocaleManager:
         "US": "en_us",
     }
 
-    @staticmethod
-    def is_valid_locale(locale_code: str) -> bool:
+    # Expand this map as needed
+    COUNTRY_CODE_ALIASES = {
+        'UK': 'GB',
+        'EL': 'GR',  # 希腊 Greece
+    }
+
+    @classmethod
+    def is_valid_locale(cls, locale_code: str) -> bool:
         """Checks whether a given locale code (e.g., 'en_us') is valid.
 
         Args:
@@ -46,8 +52,9 @@ class LocaleManager:
         if "_" not in locale_code:
             return False
         lang, country = locale_code.lower().split("_", 1)
-        lang_match = get_language_by_alpha2(alpha_2=lang)
-        country_match = get_country_by_alpha2(alpha_2=country)
+        lang_match = get_language_by_alpha2(code=lang)
+        country_code = cls.COUNTRY_CODE_ALIASES.get(country.upper(), country.upper())
+        country_match = get_country_by_alpha2(code=country_code)
         return lang_match is not None and country_match is not None
 
     @classmethod
@@ -60,7 +67,9 @@ class LocaleManager:
         Returns:
             str: A locale code like 'en_us', or None if not resolvable.
         """
+        print(raw_phone)
         number = parse_phone_number(raw_phone)
+        print(number)
         if number is None:
             return None
 

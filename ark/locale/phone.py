@@ -29,7 +29,57 @@ def parse_phone_number(raw_phone: str, region_hint: str = "CN") -> Optional[phon
         return None
 
 def format_e164(number_obj: phonenumbers.PhoneNumber) -> str:
+    """Format a PhoneNumber object into E164 format.
+    
+    Args:
+        number_obj (phonenumbers.PhoneNumber): PhoneNumber object.
+
+    Returns:
+        str if PhoneNumber object is not None, else None.
+    """
     if (number_obj is None):
         return None
     else:
         return phonenumbers.format_number(number_obj, phonenumbers.PhoneNumberFormat.E164)
+
+def format_international(number_obj: phonenumbers.PhoneNumber) -> str:
+    """Format a PhoneNumber object into E164 format.
+    
+    Args:
+        number_obj (phonenumbers.PhoneNumber): PhoneNumber object.
+
+    Returns:
+        str if PhoneNumber object is not None, else None.
+    """
+    if (number_obj is None):
+        return None
+    else:
+        return phonenumbers.format_number(number_obj, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+
+def format_national(number_obj: phonenumbers.PhoneNumber) -> str:
+    """Format a PhoneNumber object into E164 format.
+    
+    Args:
+        number_obj (phonenumbers.PhoneNumber): PhoneNumber object.
+
+    Returns:
+        str if PhoneNumber object is not None, else None.
+    """
+    if (number_obj is None):
+        return None
+    else:
+        return phonenumbers.format_number(number_obj, phonenumbers.PhoneNumberFormat.NATIONAL)
+
+def format_rfc3966(number_obj: phonenumbers.PhoneNumber) -> str:
+    """Format a PhoneNumber object into E164 format.
+    
+    Args:
+        number_obj (phonenumbers.PhoneNumber): PhoneNumber object.
+
+    Returns:
+        str if PhoneNumber object is not None, else None.
+    """
+    if (number_obj is None):
+        return None
+    else:
+        return phonenumbers.format_number(number_obj, phonenumbers.PhoneNumberFormat.RFC3966)
