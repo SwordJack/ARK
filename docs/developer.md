@@ -1,6 +1,6 @@
 # Developer Guideline
 
-作者：[SwordJack](https://github.com/SwordJack)
+Author: [SwordJack](https://github.com/SwordJack)
 
 [TOC]
 
@@ -47,7 +47,7 @@ Reference: https://github.com/jyesselm/dreem/blob/main/dreem/logger.py
 - This project is version controlled through Git.
 - The main branch of the project is the [`main`](https://github.com/SwordJack/ARK/tree/main) branch, which is the code version released to the public or used by external projects. It is currently controlled by the owner of the project.
 - Project development is generally carried out around the [`develop`](https://github.com/SwordJack/ARK/tree/develop) branch. Developers should create new branches based on this branch for development and submit a [Pull Request](https://github.com/SwordJack/ARK/pulls) to apply for merging the created branch into the `develop` branch.
-- The naming convention for the newly created branch by the developer is: `<your_name>/<type>_<description>`. For example, if **Tom** wants to add a `feature` of `eating watermelon` to the project, he can name his branch as: `tom/feature_eat_watermelon`.
+- The naming convention for the newly created branch by the developer is: `<your_name>/<type>_<description>`. For example, if **Tom** wants to add a `feature` of **eating watermelon** to the project, he can name his branch as: `tom/feature_eat_watermelon`.
 - There are several types of branche prefixes:
 
 | Prefix      | Full name     | Meaning                                                                           |

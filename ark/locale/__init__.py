@@ -8,3 +8,4 @@
 """
 
 # Here put the import lib.
+from .locale_manager import LocaleManager
