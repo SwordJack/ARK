@@ -28,6 +28,18 @@ def parse_phone_number(raw_phone: str, region_hint: str = "CN") -> Optional[phon
     except phonenumbers.NumberParseException:
         return None
 
+def region_code_for_number(number: phonenumbers.PhoneNumber) -> Optional[str]:
+    """Get the region code (e.g. 'US', 'CN', 'JP', etc.) from phone number object.
+    
+    Args:
+        number (phonenumbers.PhoneNumber): A PhoneNumber object.
+
+    Returns:
+        str if valid Phonenumber instance, else None.
+    """
+    region_code = phonenumbers.region_code_for_number(number) if number else None  # e.g., "CN", "US"
+    return region_code
+
 def format_e164(number_obj: phonenumbers.PhoneNumber) -> str:
     """Format a PhoneNumber object into E164 format.
     
@@ -35,7 +47,7 @@ def format_e164(number_obj: phonenumbers.PhoneNumber) -> str:
         number_obj (phonenumbers.PhoneNumber): PhoneNumber object.
 
     Returns:
-        str if PhoneNumber object is not None, else None.
+        str if valid Phonenumber instance, else None.
     """
     if (number_obj is None):
         return None
@@ -49,7 +61,7 @@ def format_international(number_obj: phonenumbers.PhoneNumber) -> str:
         number_obj (phonenumbers.PhoneNumber): PhoneNumber object.
 
     Returns:
-        str if PhoneNumber object is not None, else None.
+        str if valid Phonenumber instance, else None.
     """
     if (number_obj is None):
         return None
@@ -63,7 +75,7 @@ def format_national(number_obj: phonenumbers.PhoneNumber) -> str:
         number_obj (phonenumbers.PhoneNumber): PhoneNumber object.
 
     Returns:
-        str if PhoneNumber object is not None, else None.
+        str if valid Phonenumber instance, else None.
     """
     if (number_obj is None):
         return None
@@ -77,7 +89,7 @@ def format_rfc3966(number_obj: phonenumbers.PhoneNumber) -> str:
         number_obj (phonenumbers.PhoneNumber): PhoneNumber object.
 
     Returns:
-        str if PhoneNumber object is not None, else None.
+        str if valid Phonenumber instance, else None.
     """
     if (number_obj is None):
         return None
