@@ -84,10 +84,3 @@ def str_to_log_level(s: str):
         raise ValueError("unknown log level: {}".format(s))
 
 LOGGER = init_logger("ARK", None, start=True)
-
-if __name__ == "__main__":
-    LOGGER.info("Test ARK logger info.")
-    LOGGER.warning("Test ARK logger warning.")
-    LOGGER.error("Test ARK logger error.")
-    LOGGER.exception("Test ARK logger exception.")
-    LOGGER.critical("Test ARK logger critical.")
