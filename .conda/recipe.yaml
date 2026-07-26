@@ -33,6 +33,7 @@ requirements:
     - pillow
     - pydantic
     - pycountry
+    - pymongo
     - pyyaml
     - regex
     - requests
