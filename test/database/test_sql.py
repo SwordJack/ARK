@@ -77,6 +77,22 @@ def test_delete(sqlite_db):
     found = TestUserModel.find_by_id(user_id)
     assert found is None
 
+def test_create_and_drop_table(sqlite_db):
+    class TempTable(Base, SqlDbModelMixin):
+        __tablename__ = "temp_test_table"
+        id = Column(Integer, primary_key=True)
+
+    # Use the new single-table methods
+    TempTable.create_table()
+
+    # Verify we can insert into it
+    t = TempTable(id=1)
+    t.insert()
+    assert TempTable.count() == 1
+
+    # Drop it
+    TempTable.drop_table()
+
 def test_execute_atomic(sqlite_db):
     def success_tx(session):
         u = TestUserModel(name="TxUser")

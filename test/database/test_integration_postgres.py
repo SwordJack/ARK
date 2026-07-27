@@ -70,7 +70,34 @@ def test_pg_find_many_and_count(pg_service):
     count = IntegrationUser.count(name="Bob")
     assert count >= 2
 
+def test_pg_create_and_drop_table(pg_service):
+    class TempUser(Base, SqlDbModelMixin):
+        __tablename__ = "temp_integration_users"
+
+        id = Column(Integer, primary_key=True)
+        name = Column(String(50))
+
+    # Ensure it's dropped first (in case of left-over from previous crash)
+    TempUser.drop_table(checkfirst=True)
+
+    # Use the single-table method
+    TempUser.create_table(checkfirst=True)
+
+    # Verify it works
+    u = TempUser(id=1, name="Temp PG")
+    u.insert()
+    assert TempUser.count() == 1
+
+    # Drop it
+    TempUser.drop_table()
+
+    from sqlalchemy.exc import ProgrammingError
+    with pytest.raises(ProgrammingError):
+        # counting a dropped table should raise an error in SQL
+        TempUser.count()
+
 def test_pg_execute_atomic(pg_service):
+
     def success_tx(session):
         u = IntegrationUser(name="TxUserPG")
         u.insert(session)

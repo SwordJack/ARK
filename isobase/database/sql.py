@@ -177,6 +177,25 @@ class SqlDbModelMixin:
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(cls.sql_service.time_zone)
 
+
+    @classmethod
+    def create_table(cls, checkfirst: bool = True) -> None:
+        """Creates the table for this model.
+        
+        Args:
+            checkfirst (bool, optional): Do not issue CREATE if the table already exists. Default True.
+        """
+        cls.__table__.create(cls.sql_service.engine, checkfirst=checkfirst)
+
+    @classmethod
+    def drop_table(cls, checkfirst: bool = True) -> None:
+        """Drops the table for this model.
+        
+        Args:
+            checkfirst (bool, optional): Do not issue DROP if the table does not exist. Default True.
+        """
+        cls.__table__.drop(cls.sql_service.engine, checkfirst=checkfirst)
+
     def to_dict(self) -> dict:
         """Serializes this instance into a dictionary."""
         data = {}

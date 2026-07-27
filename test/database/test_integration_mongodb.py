@@ -30,6 +30,28 @@ def mongo_service():
 class IntegrationDoc(MongoDbModel):
     collection_name = "integration_docs"
 
+def test_mongo_create_and_drop_collection(mongo_service):
+    class TempDoc(MongoDbModel):
+        collection_name = "temp_integration_docs"
+
+    # Ensure it's dropped first
+    TempDoc.drop_collection()
+
+    # Explicitly create with options (e.g. capped)
+    # Using small size just for testing
+    coll = TempDoc.create_collection(capped=True, size=1024, max=5)
+    assert coll.name == "temp_integration_docs"
+
+    # Insert 6 docs, but because max=5, it should only keep 5
+    for i in range(6):
+        d = TempDoc(title=f"Doc {i}")
+        d.insert()
+
+    assert TempDoc.count() == 5
+
+    TempDoc.drop_collection()
+    assert TempDoc.count() == 0
+
 def test_mongo_insert_and_find(mongo_service):
     doc = IntegrationDoc(title="Alice Document", value=100)
     doc.insert()

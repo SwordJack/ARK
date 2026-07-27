@@ -315,6 +315,7 @@ class MongoDbModel(ABC):
         name = cls.__name__.lower()
         return name if name.endswith("s") else name + "s"
 
+
     @classmethod
     def get_collection(cls) -> Collection:
         """Gets the MongoDB collection object.
@@ -324,6 +325,50 @@ class MongoDbModel(ABC):
         """
         name = cls.collection_name or cls._derive_collection_name()
         return cls.mongo_service.db[name]
+
+    @classmethod
+    def create_collection(
+        cls,
+        capped: bool = False,
+        size: Optional[int] = None,
+        max: Optional[int] = None,
+        validator: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Collection:
+        """Explicitly creates the collection for this model.
+        
+        Note: MongoDB auto-creates collections on first insert. This method is 
+        useful when you need to specify collection options (e.g., capped collections, 
+        schema validators).
+
+        Args:
+            capped (bool, optional): To create a capped collection. Default False.
+            size (int, optional): Maximum size in bytes for a capped collection.
+            max (int, optional): Maximum number of documents in a capped collection.
+            validator (dict, optional): JSON Schema validator rules for the collection.
+            **kwargs: Additional options passed to PyMongo's create_collection.
+            
+        Returns:
+            Collection: The created collection.
+        """
+        name = cls.collection_name or cls._derive_collection_name()
+        
+        if capped:
+            kwargs["capped"] = True
+        if size is not None:
+            kwargs["size"] = size
+        if max is not None:
+            kwargs["max"] = max
+        if validator is not None:
+            kwargs["validator"] = validator
+            
+        return cls.mongo_service.db.create_collection(name, **kwargs)
+
+    @classmethod
+    def drop_collection(cls) -> None:
+        """Drops the collection for this model if it exists."""
+        name = cls.collection_name or cls._derive_collection_name()
+        cls.mongo_service.db.drop_collection(name)
 
     @classmethod
     def create_index(cls, keys: Any, **kwargs: Any) -> str:
