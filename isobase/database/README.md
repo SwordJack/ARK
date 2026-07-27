@@ -130,6 +130,34 @@ recent_users = User.find_many(User.id > 10, name="Alice")
 count = User.count(User.name.like("A%"))
 ```
 
+## Schema Management
+
+While global schema initialization is supported (e.g., `sql_db.create_all(Base)`), models in both paradigms also provide explicit, single-entity schema management.
+
+**For SQL Databases**, you can explicitly create or drop the table for a specific model. This relies on SQLAlchemy's `checkfirst` behavior by default to safely skip existing tables:
+
+```python
+# Creates the table safely (if it does not exist)
+User.create_table(checkfirst=True)
+
+# Drops the table safely (if it exists)
+User.drop_table(checkfirst=True)
+```
+
+**For MongoDB**, while collections are automatically implicitly created upon the first insertion, you can explicitly create a collection to specify options such as capping, size limits, or schema validators:
+
+```python
+# Explicitly create a capped collection with size limits
+KnowledgeDocument.create_collection(
+    capped=True,
+    size=1024 * 1024, # 1 MB
+    max=5000          # Max 5000 documents
+)
+
+# Drop the collection
+KnowledgeDocument.drop_collection()
+```
+
 ## Transaction Support
 
 Both backends support atomic transactions via the `execute_atomic` callback wrapper.
@@ -143,7 +171,7 @@ def create_records(session):
 # Executes within a managed SQL transaction or MongoDB transaction.
 # Automatically commits on success and rolls back on unhandled exceptions.
 created = User.execute_atomic(create_records)
-```
+````
 
 ## Intended Direction
 
