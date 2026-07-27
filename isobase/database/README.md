@@ -19,24 +19,28 @@ This shared database layer provides general-purpose storage for any applications
 
 ## Current Status
 
-The module currently includes MongoDB support through [`mongodb.py`](./mongodb.py):
+The module currently provides production-ready support for both non-relational and relational paradigms:
 
-- `MongoDbService`: a small framework-neutral holder for a PyMongo client, database, time zone, and transaction settings.
+**1. MongoDB (`mongodb.py`)**
+
+- `MongoDbService`: a framework-neutral holder for a PyMongo client, database, time zone, and transaction settings.
 - `MongoDbModel`: a base class for MongoDB-backed models with common CRUD and query operations.
-- `configure_mongodb`: a convenience function for configuring the module-level default MongoDB service.
-- `mongo`: the module-level default `MongoDbService` instance.
+- MongoDB is fully supported for general-purpose application storage, document models, and execution records. However, note that it is **not** intended for embeddings or vector similarity search.
 
-MongoDB is fully supported for general-purpose application storage, document models, and execution records. However, note that it is **not** intended for embeddings or vector similarity search. Vector backends, such as a dedicated vector database or PostgreSQL with `pgvector`, are planned to handle the knowledge-base vector layer separately.
+**2. SQL Relational Databases (`sql.py`)**
 
-Relational database abstractions for SQLite and PostgreSQL are planned but not yet implemented in this directory. The existing SQLite persistence used by the workflow engine lives in `isobase.workflow.database` and is currently separate from this module.
+- `SqlDbService`: a framework-neutral SQLAlchemy connection holder (Engine & Session factory). Compatible with SQLite (auto-configured for thread-safety) and PostgreSQL.
+- `SqlDbModelMixin`: a mixin providing the same Repository-pattern methods (`insert`, `find_many`, `count`, etc.) for SQLAlchemy models.
+- Natively supports both simple keyword matching and complex SQLAlchemy filter expressions.
 
 ## Quick Start
 
 `isobase.database` is not re-exported at the top-level `isobase` package, so import from this subpackage directly.
 
+### MongoDB Example
+
 ```python
 from zoneinfo import ZoneInfo
-
 from isobase.database import MongoDbModel, configure_mongodb
 
 configure_mongodb(
@@ -45,105 +49,100 @@ configure_mongodb(
     time_zone=ZoneInfo("UTC"),
 )
 
-
 class KnowledgeDocument(MongoDbModel):
     """Example MongoDB-backed model."""
-
     collection_name = "knowledge_documents"
 
-
-document = KnowledgeDocument(
-    title="IsoBase database notes",
-    content="Database services will support LLM knowledge-base storage.",
-    metadata={"source": "README"},
-)
+document = KnowledgeDocument(title="IsoBase database notes")
 document.insert()
 
 loaded = KnowledgeDocument.find_by_id(document.id)
-print(loaded.to_dict())
 ```
 
-## Using an Existing MongoClient
-
-Applications that already manage their own PyMongo client can inject it instead of passing a URI:
+### SQL Relational Example
 
 ```python
-from pymongo import MongoClient
+from sqlalchemy import Column, Integer, String
+from sqlalchemy.orm import DeclarativeBase
+from isobase.database import SqlDbModelMixin, configure_sql_db, sql_db
 
-from isobase.database import configure_mongodb
+configure_sql_db(uri="sqlite:///app.db")
 
-client = MongoClient("mongodb://localhost:27017")
-configure_mongodb(client=client, database_name="isobase")
+class Base(DeclarativeBase):
+    pass
+
+class User(Base, SqlDbModelMixin):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(50), nullable=False)
+
+# Create tables
+sql_db.create_all(Base)
+
+user = User(name="Alice")
+user.insert()
+
+loaded = User.find_by_id(user.id)
 ```
 
-For model-specific configuration, assign a dedicated service to a model class:
+## Custom Service Instances
+
+Applications that manage their own client/engine can inject it directly, or assign a dedicated service to a specific model class (e.g. for multi-tenant or multi-database setups):
 
 ```python
 from isobase.database import MongoDbModel, MongoDbService
 
-service = MongoDbService(
-    uri="mongodb://localhost:27017",
-    database_name="tenant_a",
-)
-
+service = MongoDbService(uri="mongodb://localhost:27017", database_name="tenant_a")
 
 class TenantDocument(MongoDbModel):
     collection_name = "documents"
 
-
 TenantDocument.use_mongo_service(service)
 ```
 
-## MongoDB Model Operations
+_(The same `use_sql_service(service)` approach works for `SqlDbModelMixin` and `SqlDbService`.)_
 
-`MongoDbModel` provides common operations for MongoDB-backed models:
+## Model Operations & Querying
+
+Both database backends share similar naming conventions (`insert`, `update`, `delete`, `find_one`, `find_many`, `count`, `execute_atomic`), but their querying paradigms natively match their respective technologies.
+
+**For MongoDB**, queries use MongoDB filter dictionaries:
 
 ```python
-item = KnowledgeDocument(title="Example")
-item.insert()
+# Dictionary filter
+items = KnowledgeDocument.find_many({"title": "Example"})
+count = KnowledgeDocument.count({"view_count": {"$gt": 10}})
 
-item.update_attributes({"title": "Updated example"})
-item.inc_attributes({"view_count": 1})
-
-same_item = KnowledgeDocument.find_by_id(item.id)
-items = KnowledgeDocument.find_many({"title": "Updated example"})
-count = KnowledgeDocument.count({"title": "Updated example"})
-
-item.delete()
+# MongoDB-specific operations
+KnowledgeDocument.update_attributes({"title": "Updated"})
+KnowledgeDocument.inc_attributes({"view_count": 1})
 ```
 
-Index and aggregation helpers are also available:
+**For SQL Databases**, queries support standard simple kwargs alongside powerful SQLAlchemy expressions:
 
 ```python
-KnowledgeDocument.create_index("title")
-KnowledgeDocument.list_indexes()
-KnowledgeDocument.aggregate([
-    {"$match": {"metadata.source": "README"}},
-    {"$count": "total"},
-])
+# Simple keyword match
+items = User.find_many(name="Alice")
+
+# SQLAlchemy expression match (complex conditions)
+recent_users = User.find_many(User.id > 10, name="Alice")
+count = User.count(User.name.like("A%"))
 ```
 
 ## Transaction Support
 
-`MongoDbModel.execute_atomic` runs a callback inside a MongoDB transaction when the configured MongoDB deployment supports transactions. If the deployment does not support transactions, such as a standalone MongoDB server, the callback is executed without a session.
+Both backends support atomic transactions via the `execute_atomic` callback wrapper.
 
 ```python
-def create_document(session=None):
-    document = KnowledgeDocument(title="Atomic insert")
-    document.insert(session=session)
-    return document
+def create_records(session):
+    user = User(name="Bob")
+    user.insert(session=session)
+    return user
 
-created = KnowledgeDocument.execute_atomic(create_document)
-```
-
-You can explicitly control transaction behavior during configuration:
-
-```python
-configure_mongodb(
-    uri="mongodb://localhost:27017",
-    database_name="isobase",
-    transactions_enabled=False,
-)
+# Executes within a managed SQL transaction or MongoDB transaction.
+# Automatically commits on success and rolls back on unhandled exceptions.
+created = User.execute_atomic(create_records)
 ```
 
 ## Intended Direction
