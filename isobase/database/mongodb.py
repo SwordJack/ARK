@@ -105,6 +105,7 @@ class MongoDbService(object):
         self._db = None
         return
 
+    @property
     def client(self) -> MongoClient:
         """Returns the configured MongoDB client.
 
@@ -118,6 +119,7 @@ class MongoDbService(object):
             raise RuntimeError("MongoDbService is not configured. Call configure_mongodb() first.")
         return self._client
 
+    @property
     def db(self) -> Database:
         """Returns the configured MongoDB database.
 
@@ -196,6 +198,7 @@ class MongoDbModel(ABC):
                 setattr(self, key, value)
         return
 
+    @classmethod
     def use_mongo_service(cls, service: MongoDbService) -> None:
         """Assigns a MongoDB service to this model class.
 
@@ -206,6 +209,7 @@ class MongoDbModel(ABC):
         cls._supports_transactions = None
         return
 
+    @classmethod
     def _as_service_timezone(cls, value: datetime) -> datetime:
         """Converts a datetime value to the model service time zone.
 
@@ -219,6 +223,16 @@ class MongoDbModel(ABC):
             value = value.replace(tzinfo=timezone.utc)
         return value.astimezone(cls.mongo_service.time_zone)
 
+    @property
+    def id(self) -> str:
+        """Returns the string version of the document's ``_id``.
+
+        Returns:
+            str: The document's ``_id``.
+        """
+        return str(self._id)
+
+    @id.setter
     def id(self, value: Any) -> None:
         """Sets the document's ``_id``.
 
@@ -268,6 +282,7 @@ class MongoDbModel(ABC):
                     data[field] = ts
         return data
 
+    @classmethod
     def from_dict(cls: type[T], data: dict) -> T:
         """Deserializes a dictionary into a model instance.
 
@@ -290,6 +305,7 @@ class MongoDbModel(ABC):
             setattr(instance, "_id", parsed_data["_id"])
         return instance
 
+    @classmethod
     def _derive_collection_name(cls) -> str:
         """Derives a collection name from the class name.
 
@@ -299,6 +315,7 @@ class MongoDbModel(ABC):
         name = cls.__name__.lower()
         return name if name.endswith("s") else name + "s"
 
+    @classmethod
     def get_collection(cls) -> Collection:
         """Gets the MongoDB collection object.
 
@@ -308,6 +325,7 @@ class MongoDbModel(ABC):
         name = cls.collection_name or cls._derive_collection_name()
         return cls.mongo_service.db[name]
 
+    @classmethod
     def create_index(cls, keys: Any, **kwargs: Any) -> str:
         """Creates an index on the collection.
 
@@ -320,6 +338,7 @@ class MongoDbModel(ABC):
         """
         return cls.get_collection().create_index(keys, **kwargs)
 
+    @classmethod
     def list_indexes(cls) -> Any:
         """Lists all indexes on the collection.
 
@@ -328,6 +347,7 @@ class MongoDbModel(ABC):
         """
         return cls.get_collection().list_indexes()
 
+    @classmethod
     def drop_index(cls, index_name: str) -> Any:
         """Drops an index by name.
 
@@ -339,6 +359,7 @@ class MongoDbModel(ABC):
         """
         return cls.get_collection().drop_index(index_name)
 
+    @classmethod
     def find_by_id(cls: type[T], id: Any) -> Optional[T]:
         """Finds a document by its id.
 
@@ -355,6 +376,7 @@ class MongoDbModel(ABC):
             data = cls.get_collection().find_one({"_id": id})
         return cls.from_dict(data) if data else None
 
+    @classmethod
     def find_one(cls: type[T], filter: dict) -> Optional[T]:
         """Finds a single document by filter.
 
@@ -367,6 +389,7 @@ class MongoDbModel(ABC):
         data = cls.get_collection().find_one(filter)
         return cls.from_dict(data) if data else None
 
+    @classmethod
     def find_many(
         cls: type[T],
         filter: Optional[dict] = None,
@@ -394,6 +417,7 @@ class MongoDbModel(ABC):
             cursor = cursor.limit(limit)
         return [cls.from_dict(doc) for doc in cursor]
 
+    @classmethod
     def count(cls, filter: Optional[dict] = None) -> int:
         """Counts documents by filter.
 
@@ -405,6 +429,7 @@ class MongoDbModel(ABC):
         """
         return cls.get_collection().count_documents(filter or {})
 
+    @classmethod
     def aggregate(cls, pipeline: List[Dict]) -> list:
         """Performs an aggregation query on the model's collection.
 
@@ -468,6 +493,7 @@ class MongoDbModel(ABC):
         result = self.get_collection().delete_one({"_id": self._id}, session=session)
         return result.deleted_count
 
+    @classmethod
     def delete_many(cls, filter: dict, session: Any = None) -> int:
         """Deletes multiple documents matching the filter.
 
@@ -634,6 +660,7 @@ class MongoDbModel(ABC):
         except Exception as e:
             raise RuntimeError(f"Increment failed: {e}") from e
 
+    @classmethod
     def execute_atomic(cls, callback: Callable[..., Any], **kwargs: Any) -> Any:
         """Executes a callback within a MongoDB transaction if supported.
 
@@ -660,6 +687,7 @@ class MongoDbModel(ABC):
                 return callback(session=None, **kwargs)
             raise e
 
+    @classmethod
     def init_transaction_support(cls) -> Optional[bool]:
         """Initializes and returns whether the configured MongoDB supports transactions.
 
