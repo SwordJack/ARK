@@ -15,7 +15,7 @@ build:
   number: 0
   script: |
     echo "Building version: ${{ version }}"
-    python -m pip install . -vv
+    python -m pip install . -vv --no-deps --no-build-isolation
 
 requirements:
   host:
@@ -31,8 +31,10 @@ requirements:
     - openai
     - phonenumbers
     - pillow
+    - psycopg2-binary
     - pydantic
     - pycountry
+    - pymongo
     - pyyaml
     - regex
     - requests
