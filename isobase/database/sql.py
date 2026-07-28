@@ -360,7 +360,7 @@ class SqlDbModelMixin:
             return count
 
     @classmethod
-    def execute_atomic(cls, callback: Callable[..., Any], **kwargs: Any) -> Any:
+    def execute_transaction(cls, callback: Callable[..., Any], **kwargs: Any) -> Any:
         """Executes a callback within a database transaction session.
 
         Args:

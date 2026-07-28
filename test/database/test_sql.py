@@ -1,3 +1,13 @@
+#! python3
+# -*- coding: utf-8 -*-
+"""
+@File   : test_sql.py
+@Created: 2026/07/28 03:37 (UTC+08:00)
+@Author : SwordJack
+@Contact: https://github.com/SwordJack/
+"""
+
+# Here put the import lib.
 import pytest
 from datetime import datetime, timezone
 import os
@@ -10,7 +20,7 @@ from isobase.database import configure_sql_db, SqlDbModelMixin, sql_db
 class Base(DeclarativeBase):
     pass
 
-class TestUserModel(Base, SqlDbModelMixin):
+class UserModelForTest(Base, SqlDbModelMixin):
     __tablename__ = "test_users"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -29,52 +39,52 @@ def sqlite_db(tmp_path):
         os.remove(db_path)
 
 def test_insert_and_find(sqlite_db):
-    user = TestUserModel(name="Alice")
+    user = UserModelForTest(name="Alice")
     user.insert()
 
     assert user.id is not None
 
-    found = TestUserModel.find_by_id(user.id)
+    found = UserModelForTest.find_by_id(user.id)
     assert found is not None
     assert found.name == "Alice"
 
 def test_find_many_and_count(sqlite_db):
-    user1 = TestUserModel(name="Bob")
+    user1 = UserModelForTest(name="Bob")
     user1.created_time = datetime(2020, 1, 1, tzinfo=timezone.utc)
     user1.insert()
-    user2 = TestUserModel(name="Bob")
+    user2 = UserModelForTest(name="Bob")
     user2.created_time = datetime(2021, 1, 1, tzinfo=timezone.utc)
     user2.insert()
 
     # Exact match keyword
-    bobs = TestUserModel.find_many(name="Bob")
+    bobs = UserModelForTest.find_many(name="Bob")
     assert len(bobs) == 2
 
     # Expression match (greater than)
-    recent = TestUserModel.find_many(TestUserModel.created_time > datetime(2020, 6, 1, tzinfo=timezone.utc))
+    recent = UserModelForTest.find_many(UserModelForTest.created_time > datetime(2020, 6, 1, tzinfo=timezone.utc))
     assert len(recent) == 1
 
-    count = TestUserModel.count(name="Bob")
+    count = UserModelForTest.count(name="Bob")
     assert count == 2
 
 def test_update(sqlite_db):
-    user = TestUserModel(name="Charlie")
+    user = UserModelForTest(name="Charlie")
     user.insert()
 
     user.name = "Charlie Updated"
     user.update()
 
-    found = TestUserModel.find_by_id(user.id)
+    found = UserModelForTest.find_by_id(user.id)
     assert found.name == "Charlie Updated"
 
 def test_delete(sqlite_db):
-    user = TestUserModel(name="Dave")
+    user = UserModelForTest(name="Dave")
     user.insert()
 
     user_id = user.id
     user.delete()
 
-    found = TestUserModel.find_by_id(user_id)
+    found = UserModelForTest.find_by_id(user_id)
     assert found is None
 
 def test_create_and_drop_table(sqlite_db):
@@ -93,22 +103,22 @@ def test_create_and_drop_table(sqlite_db):
     # Drop it
     TempTable.drop_table()
 
-def test_execute_atomic(sqlite_db):
+def test_execute_transaction(sqlite_db):
     def success_tx(session):
-        u = TestUserModel(name="TxUser")
+        u = UserModelForTest(name="TxUser")
         u.insert(session)
         return u.name
 
-    res = TestUserModel.execute_atomic(success_tx)
+    res = UserModelForTest.execute_transaction(success_tx)
     assert res == "TxUser"
-    assert TestUserModel.count(name="TxUser") == 1
+    assert UserModelForTest.count(name="TxUser") == 1
 
     def fail_tx(session):
-        u = TestUserModel(name="FailUser")
+        u = UserModelForTest(name="FailUser")
         u.insert(session)
         raise ValueError("Rollback")
 
     with pytest.raises(ValueError):
-        TestUserModel.execute_atomic(fail_tx)
+        UserModelForTest.execute_transaction(fail_tx)
 
-    assert TestUserModel.count(name="FailUser") == 0
+    assert UserModelForTest.count(name="FailUser") == 0

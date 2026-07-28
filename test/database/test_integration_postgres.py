@@ -1,3 +1,13 @@
+#! python3
+# -*- coding: utf-8 -*-
+"""
+@File   : test_integration_postgres.py
+@Created: 2026/07/28 03:45 (UTC+08:00)
+@Author : SwordJack
+@Contact: https://github.com/SwordJack/
+"""
+
+# Here put the import lib.
 import os
 import pytest
 from datetime import datetime, timezone
@@ -96,14 +106,14 @@ def test_pg_create_and_drop_table(pg_service):
         # counting a dropped table should raise an error in SQL
         TempUser.count()
 
-def test_pg_execute_atomic(pg_service):
+def test_pg_execute_transaction(pg_service):
 
     def success_tx(session):
         u = IntegrationUser(name="TxUserPG")
         u.insert(session)
         return u.name
 
-    res = IntegrationUser.execute_atomic(success_tx)
+    res = IntegrationUser.execute_transaction(success_tx)
     assert res == "TxUserPG"
     assert IntegrationUser.count(name="TxUserPG") == 1
 
@@ -113,6 +123,6 @@ def test_pg_execute_atomic(pg_service):
         raise ValueError("Rollback PG")
 
     with pytest.raises(ValueError):
-        IntegrationUser.execute_atomic(fail_tx)
+        IntegrationUser.execute_transaction(fail_tx)
 
     assert IntegrationUser.count(name="FailUserPG") == 0

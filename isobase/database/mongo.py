@@ -134,10 +134,10 @@ class MongoDbService(object):
         return self._db
 
 
-mongo = MongoDbService()
+mongo_db = MongoDbService()
 
 
-def configure_mongodb(
+def configure_mongo_db(
     uri: Optional[str] = None,
     database_name: Optional[str] = None,
     client: Optional[MongoClient] = None,
@@ -156,7 +156,7 @@ def configure_mongodb(
     Returns:
         MongoDbService: The configured default MongoDB service.
     """
-    return mongo.configure(
+    return mongo_db.configure(
         uri=uri,
         database_name=database_name,
         client=client,
@@ -169,7 +169,7 @@ class MongoDbModel(ABC):
     """Abstract base model class with common MongoDB operations using PyMongo."""
 
     collection_name: ClassVar[Optional[str]] = None
-    mongo_service: ClassVar[MongoDbService] = mongo
+    mongo_service: ClassVar[MongoDbService] = mongo_db
     _supports_transactions: ClassVar[Optional[bool]] = None
 
     def __init__(
@@ -706,7 +706,7 @@ class MongoDbModel(ABC):
             raise RuntimeError(f"Increment failed: {e}") from e
 
     @classmethod
-    def execute_atomic(cls, callback: Callable[..., Any], **kwargs: Any) -> Any:
+    def execute_transaction(cls, callback: Callable[..., Any], **kwargs: Any) -> Any:
         """Executes a callback within a MongoDB transaction if supported.
 
         Args:

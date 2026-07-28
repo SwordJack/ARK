@@ -1,9 +1,19 @@
+#! python3
+# -*- coding: utf-8 -*-
+"""
+@File   : test_integration_mongo.py
+@Created: 2026/07/28 03:36 (UTC+08:00)
+@Author : SwordJack
+@Contact: https://github.com/SwordJack/
+"""
+
+# Here put the import lib.
 import pytest
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from bson import ObjectId
 
-from isobase.database import configure_mongodb, MongoDbModel
+from isobase.database import configure_mongo_db, MongoDbModel
 
 # Need to setup mongodb without relying on the unstarted local server,
 # or use mongomock. Since the user asked to test against the real MongoDB,
@@ -14,7 +24,7 @@ def mongo_service():
     """Setup MongoDB test service"""
     mongo_uri = "mongodb://localhost:27017"
 
-    svc = configure_mongodb(
+    svc = configure_mongo_db(
         uri=mongo_uri,
         database_name="isobase",
         time_zone=ZoneInfo("UTC"),

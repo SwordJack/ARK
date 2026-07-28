@@ -9,7 +9,7 @@
 """
 
 # Here put the import lib.
-from .mongodb import MongoDbModel, MongoDbService, configure_mongodb, mongo
+from .mongo import MongoDbModel, MongoDbService, configure_mongo_db, mongo_db
 from .sql import SqlDbModelMixin, SqlDbService, configure_sql_db, sql_db
 
 
