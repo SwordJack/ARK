@@ -15,6 +15,7 @@ from isobase.knowledge.embeddings import OpenAIEmbeddingClient
 
 class MockEmbeddingResponse:
     """Mock response from OpenAI embeddings API."""
+
     def __init__(self, embeddings):
         self.data = [MagicMock(embedding=emb) for emb in embeddings]
 
@@ -25,7 +26,7 @@ def test_openai_client_initialization():
         api_key="test_key",
         base_url="https://test.com/v1",
         model="test-model",
-        dimensions=1024
+        dimensions=1024,
     )
 
     assert client.model == "test-model"
@@ -41,7 +42,6 @@ def test_openai_client_empty_api_key():
 @patch("isobase.knowledge.embeddings.openai.OpenAI")
 def test_embed_texts(mock_openai_class):
     """Test embedding multiple texts."""
-    # Setup mock
     mock_client = MagicMock()
     mock_openai_class.return_value = mock_client
 
@@ -84,7 +84,6 @@ def test_embed_texts_empty(mock_openai_class):
 @patch("isobase.knowledge.embeddings.openai.OpenAI")
 def test_embed_query(mock_openai_class):
     """Test embedding a single query."""
-    # Setup mock
     mock_client = MagicMock()
     mock_openai_class.return_value = mock_client
 
@@ -98,7 +97,6 @@ def test_embed_query(mock_openai_class):
     )
 
     embedding = client.embed_query("test query")
-
     assert embedding == [0.1, 0.2, 0.3]
 
 
@@ -111,50 +109,144 @@ def test_embed_query_empty(mock_openai_class):
         client.embed_query("")
 
 
-def test_dimensions_explicit():
-    """Test dimensions property with explicit value."""
-    client = OpenAIEmbeddingClient(
-        api_key="test_key",
-        dimensions=2048
-    )
+# ---------------------------------------------------------------------------
+# dimensions property tests
+# ---------------------------------------------------------------------------
 
+
+def test_dimensions_explicit():
+    """Explicit dimensions always take priority."""
+    client = OpenAIEmbeddingClient(api_key="test_key", dimensions=2048)
     assert client.dimensions == 2048
 
 
-def test_dimensions_inference():
-    """Test dimensions property inference from model name."""
-    # OpenAI models
-    client1 = OpenAIEmbeddingClient(
-        api_key="test_key",
-        model="text-embedding-3-small"
-    )
-    assert client1.dimensions == 1536
+@patch("isobase.knowledge.embeddings.openai.OpenAI")
+def test_dimensions_from_response(mock_openai_class):
+    """Dimensions auto-detected from API response after embed_texts()."""
+    mock_client = MagicMock()
+    mock_openai_class.return_value = mock_client
 
-    client2 = OpenAIEmbeddingClient(
-        api_key="test_key",
-        model="text-embedding-3-large"
-    )
-    assert client2.dimensions == 3072
+    mock_response = MockEmbeddingResponse([[0.1] * 1536])
+    mock_client.embeddings.create.return_value = mock_response
 
-    # Qwen models
-    client3 = OpenAIEmbeddingClient(
-        api_key="test_key",
-        model="text-embedding-v4"
-    )
-    assert client3.dimensions == 1024
+    client = OpenAIEmbeddingClient(api_key="test_key")
 
-    client4 = OpenAIEmbeddingClient(
-        api_key="test_key",
-        model="text-embedding-v3"
-    )
-    assert client4.dimensions == 1024
+    client.embed_texts(["test"])
+    assert client.dimensions == 1536
 
-    # Unknown model (default)
-    client5 = OpenAIEmbeddingClient(
-        api_key="test_key",
-        model="unknown-model"
+
+@patch("isobase.knowledge.embeddings.openai.OpenAI")
+def test_dimensions_from_query_response(mock_openai_class):
+    """Dimensions auto-detected from API response after embed_query()."""
+    mock_client = MagicMock()
+    mock_openai_class.return_value = mock_client
+
+    mock_response = MockEmbeddingResponse([[0.1] * 768])
+    mock_client.embeddings.create.return_value = mock_response
+
+    client = OpenAIEmbeddingClient(api_key="test_key")
+
+    client.embed_query("test query")
+    assert client.dimensions == 768
+
+
+def test_dimensions_unknown_raises():
+    """Accessing dimensions before any API call raises RuntimeError."""
+    client = OpenAIEmbeddingClient(api_key="test_key")
+
+    with pytest.raises(RuntimeError, match="Dimensions unknown"):
+        _ = client.dimensions
+
+
+def test_dimensions_explicit_overrides_auto():
+    """Explicit dimensions take priority even after auto-detection."""
+    client = OpenAIEmbeddingClient(api_key="test_key", dimensions=512)
+    # Even though we haven't called the API, explicit setting is enough
+    assert client.dimensions == 512
+
+
+@patch("isobase.knowledge.embeddings.openai.OpenAI")
+def test_dimensions_cached_after_first_call(mock_openai_class):
+    """Dimensions are cached after the first API call."""
+    mock_client_instance = MagicMock()
+    mock_openai_class.return_value = mock_client_instance
+
+    # First call returns 1024-dim embedding
+    mock_client_instance.embeddings.create.return_value = MockEmbeddingResponse(
+        [[0.1] * 1024]
     )
-    assert client5.dimensions == 1536
+
+    client = OpenAIEmbeddingClient(api_key="test_key")
+    client.embed_texts(["first call"])
+
+    # Second call returns different dimension (should not happen in practice,
+    # but proves we cache from the FIRST response)
+    mock_client_instance.embeddings.create.return_value = MockEmbeddingResponse(
+        [[0.1] * 2048]
+    )
+    client.embed_texts(["second call"])
+
+    # Still reports the first detected dimension
+    assert client.dimensions == 1024
+
+
+# ---------------------------------------------------------------------------
+# fetch_dimensions tests
+# ---------------------------------------------------------------------------
+
+
+@patch("isobase.knowledge.embeddings.openai.OpenAI")
+def test_fetch_dimensions(mock_openai_class):
+    """fetch_dimensions() returns dimension count after a single probe request."""
+    mock_client = MagicMock()
+    mock_openai_class.return_value = mock_client
+
+    mock_response = MockEmbeddingResponse([[0.1] * 1024])
+    mock_client.embeddings.create.return_value = mock_response
+
+    client = OpenAIEmbeddingClient(api_key="test_key")
+    dims = client.fetch_dimensions()
+
+    assert dims == 1024
+    assert client.dimensions == 1024  # cached
+
+
+@patch("isobase.knowledge.embeddings.openai.OpenAI")
+def test_fetch_dimensions_uses_cache(mock_openai_class):
+    """Subsequent fetch_dimensions() calls reuse the cached value."""
+    mock_client = MagicMock()
+    mock_openai_class.return_value = mock_client
+
+    mock_client.embeddings.create.return_value = MockEmbeddingResponse([[0.1] * 512])
+
+    client = OpenAIEmbeddingClient(api_key="test_key")
+    assert client.fetch_dimensions() == 512
+    # Second call should not hit the API again
+    assert client.fetch_dimensions() == 512
+    assert mock_client.embeddings.create.call_count == 1
+
+
+def test_fetch_dimensions_explicit():
+    """When dimensions are set explicitly, fetch_dimensions() returns immediately."""
+    client = OpenAIEmbeddingClient(api_key="test_key", dimensions=2048)
+    assert client.fetch_dimensions() == 2048
+
+
+@patch("isobase.knowledge.embeddings.openai.OpenAI")
+def test_fetch_dimensions_api_error(mock_openai_class):
+    """fetch_dimensions() raises on API failure."""
+    mock_client = MagicMock()
+    mock_openai_class.return_value = mock_client
+    mock_client.embeddings.create.side_effect = Exception("Service down")
+
+    client = OpenAIEmbeddingClient(api_key="test_key")
+    with pytest.raises(RuntimeError, match="Failed to fetch dimensions"):
+        client.fetch_dimensions()
+
+
+# ---------------------------------------------------------------------------
+# error handling tests
+# ---------------------------------------------------------------------------
 
 
 @patch("isobase.knowledge.embeddings.openai.OpenAI")
@@ -162,8 +254,6 @@ def test_embed_texts_with_api_error(mock_openai_class):
     """Test handling of API errors."""
     mock_client = MagicMock()
     mock_openai_class.return_value = mock_client
-
-    # Simulate API error
     mock_client.embeddings.create.side_effect = Exception("API Error")
 
     client = OpenAIEmbeddingClient(api_key="test_key")
@@ -174,17 +264,13 @@ def test_embed_texts_with_api_error(mock_openai_class):
 
 @patch("isobase.knowledge.embeddings.openai.OpenAI")
 def test_default_kwargs(mock_openai_class):
-    """Test default kwargs are passed to API."""
+    """Default kwargs are passed to every API call."""
     mock_client = MagicMock()
     mock_openai_class.return_value = mock_client
-
-    mock_response = MockEmbeddingResponse([[0.1, 0.2]])
-    mock_client.embeddings.create.return_value = mock_response
+    mock_client.embeddings.create.return_value = MockEmbeddingResponse([[0.1, 0.2]])
 
     client = OpenAIEmbeddingClient(
-        api_key="test_key",
-        encoding_format="float",
-        custom_param="value"
+        api_key="test_key", encoding_format="float", custom_param="value"
     )
 
     client.embed_texts(["test"])

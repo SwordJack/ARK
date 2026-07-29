@@ -41,6 +41,9 @@ class FakeEmbeddingClient(BaseEmbeddingClient):
     def dimensions(self) -> int:
         return self._dimensions
 
+    def fetch_dimensions(self) -> int:
+        return self._dimensions
+
 
 def test_service_initialization():
     """Test service initialization."""

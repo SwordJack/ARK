@@ -22,6 +22,10 @@ class BaseEmbeddingClient(ABC):
     capture semantic meaning for similarity search.
     """
 
+    # ------------------------------------------------------------------
+    # Core embedding methods (must be implemented by subclasses)
+    # ------------------------------------------------------------------
+
     @abstractmethod
     def embed_texts(self, texts: List[str], **kwargs) -> List[List[float]]:
         """Embeds a batch of texts.
@@ -48,6 +52,52 @@ class BaseEmbeddingClient(ABC):
         """
         pass
 
+    # ------------------------------------------------------------------
+    # Dimension helpers
+    # ------------------------------------------------------------------
+
+    @property
+    @abstractmethod
+    def dimensions(self) -> int:
+        """Returns the embedding vector dimensions.
+
+        This value must remain constant for a given model configuration.
+        All vectors returned by embed_texts() and embed_query() must
+        have this length.
+
+        Returns:
+            Dimension size (e.g., 1024, 1536, 3072).
+
+        Raises:
+            RuntimeError: If dimensions have not been set explicitly
+                and no API call has been made yet.
+        """
+        pass
+
+    @abstractmethod
+    def fetch_dimensions(self) -> int:
+        """Send a lightweight request to determine the model's output dimensions.
+
+        This makes exactly one API call with a minimal input, stores the
+        result, and returns the dimension count.  Subsequent calls (or
+        accessing the ``.dimensions`` property) will use the cached value
+        and **not** issue another request.
+
+        Use this when you want to know the dimensions upfront without
+        embedding real content.
+
+        Returns:
+            Embedding vector dimension count.
+
+        Raises:
+            RuntimeError: If the API call fails.
+        """
+        pass
+
+    # ------------------------------------------------------------------
+    # Convenience methods (may be overridden by subclasses)
+    # ------------------------------------------------------------------
+
     @abstractmethod
     def embed_query(self, query: str, **kwargs) -> List[float]:
         """Embeds a single query string.
@@ -72,19 +122,5 @@ class BaseEmbeddingClient(ABC):
             >>> vector = client.embed_query("search term")
             >>> len(vector)
             1024
-        """
-        pass
-
-    @property
-    @abstractmethod
-    def dimensions(self) -> int:
-        """Returns the embedding vector dimensions.
-
-        This value must remain constant for a given model configuration.
-        All vectors returned by embed_texts() and embed_query() must
-        have this length.
-
-        Returns:
-            Dimension size (e.g., 1024, 1536, 3072).
         """
         pass
