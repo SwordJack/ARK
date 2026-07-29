@@ -29,8 +29,8 @@ class KnowledgeBase:
         chunk_size: Default chunk size in characters.
         chunk_overlap: Overlap between adjacent chunks in characters.
         metadata: Additional metadata (tags, owner, etc.).
-        created_at: Timestamp of creation.
-        updated_at: Timestamp of last update.
+        created_time: Timestamp of creation.
+        updated_time: Timestamp of last update.
     """
 
     id: str
@@ -41,8 +41,8 @@ class KnowledgeBase:
     chunk_size: int = 512
     chunk_overlap: int = 50
     metadata: Dict[str, Any] = field(default_factory=dict)
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_time: Optional[datetime] = None
+    updated_time: Optional[datetime] = None
 
 
 @dataclass
@@ -59,7 +59,7 @@ class KnowledgeDocument:
         source_uri: Source location (URL, file path, etc.).
         content: Full text content of the document.
         metadata: Additional metadata (author, date, tags, etc.).
-        created_at: Timestamp of document creation.
+        created_time: Timestamp of document creation.
     """
 
     id: str
@@ -68,7 +68,7 @@ class KnowledgeDocument:
     source_uri: str = ""
     content: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
-    created_at: Optional[datetime] = None
+    created_time: Optional[datetime] = None
 
 
 @dataclass

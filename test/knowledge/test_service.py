@@ -78,7 +78,7 @@ def test_service_create_knowledge_base():
     assert kb.description == "Test description"
     assert kb.metadata["owner"] == "test"
     assert kb.dimensions == 128  # From FakeEmbeddingClient
-    assert kb.created_at is not None
+    assert kb.created_time is not None
 
 
 def test_service_index_text():

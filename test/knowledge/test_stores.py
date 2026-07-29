@@ -72,8 +72,8 @@ def test_memory_store_create_knowledge_base():
 
     assert created_kb.id == "kb1"
     assert created_kb.name == "Test KB"
-    assert created_kb.created_at is not None
-    assert created_kb.updated_at is not None
+    assert created_kb.created_time is not None
+    assert created_kb.updated_time is not None
 
 
 def test_memory_store_create_knowledge_base_auto_id():
@@ -138,7 +138,7 @@ def test_memory_store_add_document():
 
     assert added_doc.id == "doc1"
     assert added_doc.title == "Test Doc"
-    assert added_doc.created_at is not None
+    assert added_doc.created_time is not None
 
 
 def test_memory_store_add_document_auto_id():

@@ -93,8 +93,8 @@ class MemoryKnowledgeStore(BaseKnowledgeStore):
             raise ValueError(f"Knowledge base {kb.id} already exists")
 
         now = datetime.now(timezone.utc)
-        kb.created_at = now
-        kb.updated_at = now
+        kb.created_time = now
+        kb.updated_time = now
 
         self.knowledge_bases[kb.id] = kb
         return kb
@@ -136,7 +136,7 @@ class MemoryKnowledgeStore(BaseKnowledgeStore):
         if not doc.id:
             doc.id = str(uuid.uuid4())
 
-        doc.created_at = datetime.now(timezone.utc)
+        doc.created_time = datetime.now(timezone.utc)
         self.documents[doc.id] = doc
         return doc
 

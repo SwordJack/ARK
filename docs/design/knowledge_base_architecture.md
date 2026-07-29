@@ -170,8 +170,8 @@ class KnowledgeBase:
     chunk_size: int = 512
     chunk_overlap: int = 50
     metadata: Dict[str, Any] = field(default_factory=dict)
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_time: Optional[datetime] = None
+    updated_time: Optional[datetime] = None
 
 
 @dataclass
@@ -184,7 +184,7 @@ class KnowledgeDocument:
     source_uri: str = ""
     content: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
-    created_at: Optional[datetime] = None
+    created_time: Optional[datetime] = None
 
 
 @dataclass
@@ -525,8 +525,8 @@ class MemoryKnowledgeStore(BaseKnowledgeStore):
     def create_knowledge_base(self, kb: KnowledgeBase) -> KnowledgeBase:
         if not kb.id:
             kb.id = str(uuid.uuid4())
-        kb.created_at = datetime.now(timezone.utc)
-        kb.updated_at = kb.created_at
+        kb.created_time = datetime.now(timezone.utc)
+        kb.updated_time = kb.created_time
         self.knowledge_bases[kb.id] = kb
         return kb
 
@@ -538,7 +538,7 @@ class MemoryKnowledgeStore(BaseKnowledgeStore):
     def add_document(self, doc: KnowledgeDocument) -> KnowledgeDocument:
         if not doc.id:
             doc.id = str(uuid.uuid4())
-        doc.created_at = datetime.now(timezone.utc)
+        doc.created_time = datetime.now(timezone.utc)
         self.documents[doc.id] = doc
         return doc
 

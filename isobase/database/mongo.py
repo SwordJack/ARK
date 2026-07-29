@@ -262,26 +262,6 @@ class MongoDbModel(ABC):
                     data[key] = self._as_service_timezone(value).isoformat()
         return data
 
-    def to_legacy_dict(self) -> dict:
-        """Serializes this instance with Unix timestamps for legacy clients.
-
-        Returns:
-            dict: The instance's data with legacy timestamp fields.
-        """
-        data = self.to_dict()
-        for field in ["created_time", "updated_time", "created_at", "updated_at", "timestamp"]:
-            if hasattr(self, field) and isinstance(getattr(self, field), datetime):
-                attr_value = getattr(self, field)
-                ts = int(attr_value.timestamp())
-                if field == "created_time":
-                    data["created_at"] = ts
-                    data["timestamp"] = ts
-                elif field == "updated_time":
-                    data["updated_at"] = ts
-                else:
-                    data[field] = ts
-        return data
-
     @classmethod
     def from_dict(cls: type[T], data: dict) -> T:
         """Deserializes a dictionary into a model instance.
