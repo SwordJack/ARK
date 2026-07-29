@@ -123,3 +123,51 @@ def test_fixed_chunker_realistic_text():
         reconstructed += chunks[i][20:]
 
     assert len(reconstructed) >= len(text)
+
+
+def test_fixed_chunker_override_size():
+    """chunk_size can be overridden at call time."""
+    chunker = FixedSizeChunker(chunk_size=100, chunk_overlap=0)
+    chunks = chunker.chunk("0123456789abcdef", chunk_size=5)
+    assert chunks == ["01234", "56789", "abcde", "f"]
+
+
+def test_fixed_chunker_override_overlap():
+    """chunk_overlap can be overridden at call time."""
+    chunker = FixedSizeChunker(chunk_size=10, chunk_overlap=0)
+    chunks = chunker.chunk(
+        "0123456789abcdefghij", chunk_size=10, chunk_overlap=3
+    )
+    assert len(chunks) == 3
+    assert chunks[1] == "789abcdefg"
+
+
+def test_fixed_chunker_override_validation():
+    """Override values are still validated."""
+    chunker = FixedSizeChunker(chunk_size=100, chunk_overlap=0)
+
+    with pytest.raises(ValueError, match="chunk_size must be positive"):
+        chunker.chunk("text", chunk_size=0)
+
+    with pytest.raises(ValueError, match="chunk_overlap cannot be negative"):
+        chunker.chunk("text", chunk_overlap=-1)
+
+    with pytest.raises(ValueError, match="chunk_overlap.*must be less than"):
+        chunker.chunk("text", chunk_size=10, chunk_overlap=10)
+
+
+def test_fixed_chunker_overrides_do_not_mutate_instance():
+    """Override call does not change the chunker's own defaults."""
+    chunker = FixedSizeChunker(chunk_size=100, chunk_overlap=10)
+    chunker.chunk("text", chunk_size=50, chunk_overlap=5)
+    assert chunker.chunk_size == 100
+    assert chunker.chunk_overlap == 10
+
+
+def test_fixed_chunker_accepts_kwargs():
+    """Extra keyword args are accepted (future-proofing for other strategies)."""
+    chunker = FixedSizeChunker(chunk_size=10, chunk_overlap=0)
+    chunks = chunker.chunk(
+        "0123456789", heading_path=["Ch1", "1.1"], separator="\n"
+    )
+    assert chunks == ["0123456789"]

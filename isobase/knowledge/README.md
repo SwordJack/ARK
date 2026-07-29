@@ -226,7 +226,12 @@ isobase/knowledge/
 
 ### Knowledge Base
 
-A logical collection of indexed documents with configuration:
+A logical collection of indexed documents with configuration.  The knowledge
+base entity is the **single source of truth** for chunking parameters:
+``index_text()`` reads the KB's ``chunk_size`` / ``chunk_overlap`` and passes
+them to the chunker, so every document in a given KB is split with the same
+parameters.  Changing the chunker instance on the service **does not** change
+the behaviour of already-created KBs.
 
 - Embedding model identifier
 - Chunking strategy (size, overlap)
@@ -258,6 +263,13 @@ Search result containing:
 
 ## Chunking Strategies
 
+Chunking parameters are owned by the **knowledge base**, not by the chunker
+instance.  When you create a knowledge base the current chunker's defaults are
+snapped into the entity; every subsequent ``index_text()`` call reads the
+KB's stored values and passes them to the chunker.  This means you can manage
+multiple knowledge bases with different chunk sizes through a single service
+instance — the KB entity is the single source of truth.
+
 ### Fixed-Size Chunker
 
 Simple character-based splitting with overlap:
@@ -266,11 +278,14 @@ Simple character-based splitting with overlap:
 from isobase.knowledge.chunking import FixedSizeChunker
 
 chunker = FixedSizeChunker(
-    chunk_size=512,    # Max characters per chunk
-    chunk_overlap=50,  # Overlap between chunks
+    chunk_size=512,    # Default max characters per chunk
+    chunk_overlap=50,  # Default overlap between chunks
 )
 
-chunks = chunker.chunk("Long text content...")
+# At call time the KB's own values override the chunker defaults:
+chunks = chunker.chunk("Long text content...",
+                        chunk_size=1024,
+                        chunk_overlap=100)
 ```
 
 **Pros:**
@@ -284,7 +299,21 @@ chunks = chunker.chunk("Long text content...")
 - May split mid-sentence
 - Doesn't respect document structure
 
-**Future:** Recursive character splitter, semantic chunking, structure-aware chunking.
+### Future Strategies
+
+The ``BaseChunker.chunk()`` signature accepts ``**kwargs`` so that
+structure-aware chunkers can receive additional parameters in the future:
+
+```python
+# Planned — not yet implemented
+chunker.chunk(text,
+              chunk_size=500, chunk_overlap=50,
+              heading_path=["Chapter 1", "1.1 Overview"])
+```
+
+When a semantic chunker produces chunks the extra context (e.g. heading
+breadcrumbs) can be stored in ``KnowledgeChunk.metadata`` under the
+conventional keys documented on the entity.
 
 ## Storage Backends
 

@@ -78,6 +78,14 @@ class KnowledgeChunk:
     Chunks are the unit of retrieval. Each chunk is embedded and stored
     with its vector representation for similarity search.
 
+    ``metadata`` is a free-form dictionary.  To make the most of future
+    semantic chunkers, consider using these (all optional) keys:
+
+    * ``heading_path``: ``List[str]`` — breadcrumb trail of parent headings,
+      e.g. ``["第 1 章", "1.1 概述"]``.
+    * ``chunk_strategy``: ``str`` — name of the strategy that produced this
+      chunk (``"fixed"``, ``"recursive"``, ``"markdown"``, …).
+
     Attributes:
         id: Unique identifier for the chunk.
         document_id: Parent document ID.
@@ -85,7 +93,7 @@ class KnowledgeChunk:
         content: Text content of the chunk.
         index: Position of this chunk within the parent document (0-based).
         token_count: Approximate token count (for cost estimation).
-        metadata: Additional metadata (page number, section, etc.).
+        metadata: Additional metadata (heading path, page number, etc.).
     """
 
     id: str

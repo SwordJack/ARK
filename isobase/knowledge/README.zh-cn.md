@@ -215,7 +215,11 @@ isobase/knowledge/
 
 ### 知识库
 
-带配置的索引文档逻辑集合：
+带配置的索引文档逻辑集合。知识库实体是**分块参数的唯一真相来源**：
+``index_text()`` 会读取 KB 的 ``chunk_size`` / ``chunk_overlap`` 并传给 chunker，
+因此同一个 KB 内的所有文档始终使用相同参数分块。更换 service 上的 chunker
+实例**不会影响**已创建的 KB 的行为。
+
 - 嵌入模型标识符
 - 分块策略（大小、重叠）
 - 向量维度
@@ -243,6 +247,8 @@ isobase/knowledge/
 
 ## 分块策略
 
+分块参数由**知识库实体**而非 chunker 实例拥有。创建知识库时，chunker 的当前默认值会被写入 KB 实体；后续每次调用 ``index_text()`` 都会从 KB 实体读取存储的参数并传递给 chunker。这使得 **同一个 service 实例可以管理多份配置不同的知识库** ——每个 KB 使用自己的参数分块，chunker 实例只提供默认值。
+
 ### 固定大小分块器
 
 带重叠的简单基于字符的分割：
@@ -251,11 +257,14 @@ isobase/knowledge/
 from isobase.knowledge.chunking import FixedSizeChunker
 
 chunker = FixedSizeChunker(
-    chunk_size=512,    # 每块最大字符数
-    chunk_overlap=50,  # 块之间的重叠
+    chunk_size=512,    # 默认每块最大字符数
+    chunk_overlap=50,  # 默认块之间的重叠
 )
 
-chunks = chunker.chunk("长文本内容...")
+# 调用时 KB 的参数会覆盖 chunker 默认值：
+chunks = chunker.chunk("长文本内容...",
+                        chunk_size=1024,
+                        chunk_overlap=100)
 ```
 
 **优点：**
@@ -267,7 +276,18 @@ chunks = chunker.chunk("长文本内容...")
 - 可能在句子中间分割
 - 不尊重文档结构
 
-**未来：** 递归字符分割器、语义分块、结构感知分块。
+### 未来策略
+
+``BaseChunker.chunk()`` 签名保留了 ``**kwargs``，为未来的结构感知分块器预留通道：
+
+```python
+# 计划中 — 尚未实现
+chunker.chunk(text,
+              chunk_size=500, chunk_overlap=50,
+              heading_path=["第 1 章", "1.1 概述"])
+```
+
+语义分块器产生的额外上下文（如标题路径）可以存入 ``KnowledgeChunk.metadata``，具体键名约定见实体定义。
 
 ## 存储后端
 

@@ -81,7 +81,43 @@ def test_service_create_knowledge_base():
     assert kb.description == "Test description"
     assert kb.metadata["owner"] == "test"
     assert kb.dimensions == 128  # From FakeEmbeddingClient
+    assert kb.chunk_size == 512   # FixedSizeChunker default
+    assert kb.chunk_overlap == 50
     assert kb.created_time is not None
+
+
+def test_service_kb_chunk_params_override_chunker():
+    """index_text uses KB's chunk_size/chunk_overlap, not the chunker's
+    instance defaults."""
+    # Explicit instance defaults that differ from the KB settings
+    service = KnowledgeBaseService(
+        embedding_client=FakeEmbeddingClient(dimensions=64),
+        store=MemoryKnowledgeStore(),
+        chunker=FixedSizeChunker(chunk_size=100, chunk_overlap=20),
+    )
+
+    # Create KB — at this point the KB snaps the chunker's current defaults
+    kb = service.create_knowledge_base(name="Test KB")
+
+    # Build a new chunker with *different* defaults and wire it into the
+    # same service, as if the service's chunker had been replaced between
+    # KB creation and indexing.
+    service.chunker = FixedSizeChunker(chunk_size=999, chunk_overlap=99)
+
+    text = "RAG stands for Retrieval-Augmented Generation. " * 5
+    service.index_text(
+        knowledge_base_id=kb.id, text=text, title="Test Doc"
+    )
+
+    # Retrieve — the chunks should have been cut with the KB's recorded
+    # parameters (100/20), not the new chunker defaults (999/99).  We
+    # verify by checking no chunk exceeds the KB's chunk_size.
+    results = service.retrieve(
+        query="RAG", knowledge_base_id=kb.id, top_k=10
+    )
+    assert results
+    for r in results:
+        assert len(r.chunk.content) <= 100
 
 
 def test_service_index_text():

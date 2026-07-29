@@ -129,7 +129,7 @@ class KnowledgeBaseService:
             )
         """
         # Verify knowledge base exists
-        self.store.get_knowledge_base(knowledge_base_id)
+        kb = self.store.get_knowledge_base(knowledge_base_id)
 
         # Create document record
         doc = KnowledgeDocument(
@@ -142,8 +142,14 @@ class KnowledgeBaseService:
         )
         doc = self.store.add_document(doc)
 
-        # Chunk text
-        chunk_texts = self.chunker.chunk(text)
+        # Chunk text — the KB's stored values take precedence over
+        # the chunker instance defaults so that each knowledge base
+        # behaves according to its own recorded configuration.
+        chunk_texts = self.chunker.chunk(
+            text,
+            chunk_size=kb.chunk_size or None,
+            chunk_overlap=kb.chunk_overlap if kb.chunk_overlap is not None else None,
+        )
 
         if not chunk_texts:
             # Empty document, nothing to index

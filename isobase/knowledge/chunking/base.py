@@ -9,7 +9,7 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Any, Dict, List, Optional
 
 
 class BaseChunker(ABC):
@@ -17,15 +17,33 @@ class BaseChunker(ABC):
 
     A chunker splits text into smaller segments for embedding and retrieval.
     Different strategies balance chunk size, semantic coherence, and overlap.
+
+    All concrete chunkers must accept ``chunk_size`` and ``chunk_overlap``
+    via keyword arguments so that a ``KnowledgeBase`` can override the
+    instance defaults at runtime::
+
+        chunker.chunk(text,
+                      chunk_size=kb.chunk_size,
+                      chunk_overlap=kb.chunk_overlap)
     """
 
     @abstractmethod
-    def chunk(self, text: str, **kwargs) -> List[str]:
+    def chunk(
+        self,
+        text: str,
+        *,
+        chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
+        **kwargs: Any,
+    ) -> List[str]:
         """Splits text into chunks.
 
         Args:
             text: Input text to split.
-            **kwargs: Chunker-specific parameters.
+            chunk_size: Optional override for the chunker's default size.
+            chunk_overlap: Optional override for the chunker's default overlap.
+            **kwargs: Additional strategy-specific parameters (e.g.
+                ``heading_path`` for semantic chunkers).
 
         Returns:
             List of text chunks.
