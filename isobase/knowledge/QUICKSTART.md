@@ -50,9 +50,9 @@ print(results[0].chunk.content)
 #### Option A: Qwen v4 via AIMLAPI
 
 ```python
-from isobase.knowledge.embeddings import OpenAICompatEmbeddingClient
+from isobase.knowledge.embeddings import OpenAIEmbeddingClient
 
-embedding_client = OpenAICompatEmbeddingClient(
+embedding_client = OpenAIEmbeddingClient(
     api_key="your_aimlapi_key",
     base_url="https://api.aimlapi.com/v1",
     model="alibaba/qwen-text-embedding-v4",
@@ -65,7 +65,7 @@ embedding_client = OpenAICompatEmbeddingClient(
 ```python
 import os
 
-embedding_client = OpenAICompatEmbeddingClient(
+embedding_client = OpenAIEmbeddingClient(
     api_key=os.getenv("DASHSCOPE_API_KEY"),
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     model="text-embedding-v4",
@@ -78,7 +78,7 @@ embedding_client = OpenAICompatEmbeddingClient(
 ```python
 import os
 
-embedding_client = OpenAICompatEmbeddingClient(
+embedding_client = OpenAIEmbeddingClient(
     api_key=os.getenv("OPENAI_API_KEY"),
     model="text-embedding-3-small",
 )
@@ -149,7 +149,7 @@ export DASHSCOPE_API_KEY="sk-..."
 Or pass directly:
 
 ```python
-client = OpenAICompatEmbeddingClient(api_key="your_key", ...)
+client = OpenAIEmbeddingClient(api_key="your_key", ...)
 ```
 
 ### Empty Search Results

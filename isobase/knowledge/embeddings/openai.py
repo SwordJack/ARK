@@ -2,7 +2,7 @@
 # -*- encoding: utf-8 -*-
 """OpenAI-compatible embedding client implementation.
 
-@File   :   openai_compat.py
+@File   :   openai.py
 @Created:   2026/07/29 00:20
 @Author :   SwordJack
 @Contact:   https://github.com/SwordJack/
@@ -13,7 +13,7 @@ from openai import OpenAI
 from .base import BaseEmbeddingClient
 
 
-class OpenAICompatEmbeddingClient(BaseEmbeddingClient):
+class OpenAIEmbeddingClient(BaseEmbeddingClient):
     """OpenAI-compatible embedding client.
 
     Supports any embedding API that follows the OpenAI embeddings endpoint
@@ -26,7 +26,7 @@ class OpenAICompatEmbeddingClient(BaseEmbeddingClient):
     - Any custom OpenAI-compatible endpoint
 
     Example usage with Qwen v4 via AIMLAPI:
-        client = OpenAICompatEmbeddingClient(
+        client = OpenAIEmbeddingClient(
             api_key="your_aimlapi_key",
             base_url="https://api.aimlapi.com/v1",
             model="alibaba/qwen-text-embedding-v4",
@@ -35,7 +35,7 @@ class OpenAICompatEmbeddingClient(BaseEmbeddingClient):
 
     Example usage with Alibaba DashScope:
         import os
-        client = OpenAICompatEmbeddingClient(
+        client = OpenAIEmbeddingClient(
             api_key=os.getenv("DASHSCOPE_API_KEY"),
             base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
             model="text-embedding-v4",
@@ -43,7 +43,7 @@ class OpenAICompatEmbeddingClient(BaseEmbeddingClient):
         )
 
     Example usage with OpenAI:
-        client = OpenAICompatEmbeddingClient(
+        client = OpenAIEmbeddingClient(
             api_key=os.getenv("OPENAI_API_KEY"),
             model="text-embedding-3-small"
         )

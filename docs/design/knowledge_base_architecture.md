@@ -120,7 +120,7 @@ isobase/knowledge/
 ├── embeddings/
 │   ├── __init__.py
 │   ├── base.py         # BaseEmbeddingClient ABC
-│   └── openai_compat.py  # OpenAI-compatible embedding client
+│   └── openai.py  # OpenAI-compatible embedding client
 ├── stores/
 │   ├── __init__.py
 │   ├── base.py         # BaseKnowledgeStore ABC
@@ -268,7 +268,7 @@ class BaseEmbeddingClient(ABC):
         pass
 ```
 
-### 4.3 OpenAI-Compatible Embedding Client (`embeddings/openai_compat.py`)
+### 4.3 OpenAI-Compatible Embedding Client (`embeddings/openai.py`)
 
 ```python
 from typing import List, Optional
@@ -276,7 +276,7 @@ from openai import OpenAI
 from .base import BaseEmbeddingClient
 
 
-class OpenAICompatEmbeddingClient(BaseEmbeddingClient):
+class OpenAIEmbeddingClient(BaseEmbeddingClient):
     """OpenAI-compatible embedding client.
 
     Supports:
@@ -287,7 +287,7 @@ class OpenAICompatEmbeddingClient(BaseEmbeddingClient):
 
     Example usage:
         # Qwen v4 via AIMLAPI
-        client = OpenAICompatEmbeddingClient(
+        client = OpenAIEmbeddingClient(
             api_key="aimlapi_key",
             base_url="https://api.aimlapi.com/v1",
             model="alibaba/qwen-text-embedding-v4",
@@ -295,7 +295,7 @@ class OpenAICompatEmbeddingClient(BaseEmbeddingClient):
         )
 
         # Qwen v4 via DashScope
-        client = OpenAICompatEmbeddingClient(
+        client = OpenAIEmbeddingClient(
             api_key=os.getenv("DASHSCOPE_API_KEY"),
             base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
             model="text-embedding-v4",
@@ -828,7 +828,7 @@ def create_knowledge_search_tool(
 
 1. ✅ `entities.py` - Core DTOs
 2. ✅ `chunking/base.py` + `chunking/fixed.py` - Fixed-size chunker
-3. ✅ `embeddings/base.py` + `embeddings/openai_compat.py` - OpenAI-compatible client
+3. ✅ `embeddings/base.py` + `embeddings/openai.py` - OpenAI-compatible client
 4. ✅ `stores/base.py` + `stores/memory.py` - In-memory store
 5. ✅ `service.py` - KnowledgeBaseService
 6. ✅ `tools.py` - LLM tool integration
@@ -932,9 +932,9 @@ def create_knowledge_search_tool(
 **Configuration:**
 
 ```python
-from isobase.knowledge.embeddings.openai_compat import OpenAICompatEmbeddingClient
+from isobase.knowledge.embeddings.openai import OpenAIEmbeddingClient
 
-client = OpenAICompatEmbeddingClient(
+client = OpenAIEmbeddingClient(
     api_key="your_aimlapi_key",
     base_url="https://api.aimlapi.com/v1",
     model="alibaba/qwen-text-embedding-v4",
@@ -968,9 +968,9 @@ client = OpenAICompatEmbeddingClient(
 
 ```python
 import os
-from isobase.knowledge.embeddings.openai_compat import OpenAICompatEmbeddingClient
+from isobase.knowledge.embeddings.openai import OpenAIEmbeddingClient
 
-client = OpenAICompatEmbeddingClient(
+client = OpenAIEmbeddingClient(
     api_key=os.getenv("DASHSCOPE_API_KEY"),
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     model="text-embedding-v4",
@@ -1006,9 +1006,9 @@ embeddings = client.embed_texts(texts)  # Single API call
 **Configuration:**
 
 ```python
-from isobase.knowledge.embeddings.openai_compat import OpenAICompatEmbeddingClient
+from isobase.knowledge.embeddings.openai import OpenAIEmbeddingClient
 
-client = OpenAICompatEmbeddingClient(
+client = OpenAIEmbeddingClient(
     api_key=os.getenv("OPENAI_API_KEY"),
     model="text-embedding-3-small",  # or text-embedding-3-large
     dimensions=1536,  # 3-small: 1536, 3-large: 3072
@@ -1027,12 +1027,12 @@ client = OpenAICompatEmbeddingClient(
 
 ```python
 from isobase.knowledge.service import KnowledgeBaseService
-from isobase.knowledge.embeddings.openai_compat import OpenAICompatEmbeddingClient
+from isobase.knowledge.embeddings.openai import OpenAIEmbeddingClient
 from isobase.knowledge.chunking.fixed import FixedSizeChunker
 from isobase.knowledge.stores.memory import MemoryKnowledgeStore
 
 # Initialize components
-embedding_client = OpenAICompatEmbeddingClient(
+embedding_client = OpenAIEmbeddingClient(
     api_key="your_api_key",
     base_url="https://api.aimlapi.com/v1",
     model="alibaba/qwen-text-embedding-v4",
@@ -1180,7 +1180,7 @@ def test_embed_texts(mock_openai):
     mock_response.data = [MagicMock(embedding=[0.1, 0.2, 0.3])]
     mock_openai.return_value.embeddings.create.return_value = mock_response
 
-    client = OpenAICompatEmbeddingClient(api_key="test", model="test-model")
+    client = OpenAIEmbeddingClient(api_key="test", model="test-model")
     embeddings = client.embed_texts(["test text"])
 
     assert len(embeddings) == 1
@@ -1357,7 +1357,7 @@ def test_e2e_index_and_retrieve():
 
 ### 12.3 Embedding Model Selection
 
-**Current decision:** Support OpenAI-compatible APIs via `OpenAICompatEmbeddingClient`.
+**Current decision:** Support OpenAI-compatible APIs via `OpenAIEmbeddingClient`.
 
 **Future options:**
 

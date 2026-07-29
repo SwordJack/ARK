@@ -31,7 +31,7 @@ class KnowledgeBaseService:
 
     Example usage:
         service = KnowledgeBaseService(
-            embedding_client=OpenAICompatEmbeddingClient(...),
+            embedding_client=OpenAIEmbeddingClient(...),
             store=MemoryKnowledgeStore(),
             chunker=FixedSizeChunker(chunk_size=512, chunk_overlap=50)
         )

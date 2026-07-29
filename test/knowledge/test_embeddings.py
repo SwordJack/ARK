@@ -10,7 +10,7 @@
 
 import pytest
 from unittest.mock import MagicMock, patch
-from isobase.knowledge.embeddings import OpenAICompatEmbeddingClient
+from isobase.knowledge.embeddings import OpenAIEmbeddingClient
 
 
 class MockEmbeddingResponse:
@@ -19,9 +19,9 @@ class MockEmbeddingResponse:
         self.data = [MagicMock(embedding=emb) for emb in embeddings]
 
 
-def test_openai_compat_client_initialization():
+def test_openai_client_initialization():
     """Test client initialization."""
-    client = OpenAICompatEmbeddingClient(
+    client = OpenAIEmbeddingClient(
         api_key="test_key",
         base_url="https://test.com/v1",
         model="test-model",
@@ -32,13 +32,13 @@ def test_openai_compat_client_initialization():
     assert client.dimensions == 1024
 
 
-def test_openai_compat_client_empty_api_key():
+def test_openai_client_empty_api_key():
     """Test client initialization with empty API key."""
     with pytest.raises(ValueError, match="api_key cannot be empty"):
-        OpenAICompatEmbeddingClient(api_key="")
+        OpenAIEmbeddingClient(api_key="")
 
 
-@patch("isobase.knowledge.embeddings.openai_compat.OpenAI")
+@patch("isobase.knowledge.embeddings.openai.OpenAI")
 def test_embed_texts(mock_openai_class):
     """Test embedding multiple texts."""
     # Setup mock
@@ -52,7 +52,7 @@ def test_embed_texts(mock_openai_class):
     mock_client.embeddings.create.return_value = mock_response
 
     # Create client and embed
-    client = OpenAICompatEmbeddingClient(
+    client = OpenAIEmbeddingClient(
         api_key="test_key",
         model="test-model",
         dimensions=3
@@ -72,16 +72,16 @@ def test_embed_texts(mock_openai_class):
     assert call_kwargs["dimensions"] == 3
 
 
-@patch("isobase.knowledge.embeddings.openai_compat.OpenAI")
+@patch("isobase.knowledge.embeddings.openai.OpenAI")
 def test_embed_texts_empty(mock_openai_class):
     """Test embedding with empty text list."""
-    client = OpenAICompatEmbeddingClient(api_key="test_key")
+    client = OpenAIEmbeddingClient(api_key="test_key")
 
     with pytest.raises(ValueError, match="texts cannot be empty"):
         client.embed_texts([])
 
 
-@patch("isobase.knowledge.embeddings.openai_compat.OpenAI")
+@patch("isobase.knowledge.embeddings.openai.OpenAI")
 def test_embed_query(mock_openai_class):
     """Test embedding a single query."""
     # Setup mock
@@ -92,7 +92,7 @@ def test_embed_query(mock_openai_class):
     mock_client.embeddings.create.return_value = mock_response
 
     # Create client and embed
-    client = OpenAICompatEmbeddingClient(
+    client = OpenAIEmbeddingClient(
         api_key="test_key",
         model="test-model"
     )
@@ -102,10 +102,10 @@ def test_embed_query(mock_openai_class):
     assert embedding == [0.1, 0.2, 0.3]
 
 
-@patch("isobase.knowledge.embeddings.openai_compat.OpenAI")
+@patch("isobase.knowledge.embeddings.openai.OpenAI")
 def test_embed_query_empty(mock_openai_class):
     """Test embedding with empty query."""
-    client = OpenAICompatEmbeddingClient(api_key="test_key")
+    client = OpenAIEmbeddingClient(api_key="test_key")
 
     with pytest.raises(ValueError, match="query cannot be empty"):
         client.embed_query("")
@@ -113,7 +113,7 @@ def test_embed_query_empty(mock_openai_class):
 
 def test_dimensions_explicit():
     """Test dimensions property with explicit value."""
-    client = OpenAICompatEmbeddingClient(
+    client = OpenAIEmbeddingClient(
         api_key="test_key",
         dimensions=2048
     )
@@ -124,40 +124,40 @@ def test_dimensions_explicit():
 def test_dimensions_inference():
     """Test dimensions property inference from model name."""
     # OpenAI models
-    client1 = OpenAICompatEmbeddingClient(
+    client1 = OpenAIEmbeddingClient(
         api_key="test_key",
         model="text-embedding-3-small"
     )
     assert client1.dimensions == 1536
 
-    client2 = OpenAICompatEmbeddingClient(
+    client2 = OpenAIEmbeddingClient(
         api_key="test_key",
         model="text-embedding-3-large"
     )
     assert client2.dimensions == 3072
 
     # Qwen models
-    client3 = OpenAICompatEmbeddingClient(
+    client3 = OpenAIEmbeddingClient(
         api_key="test_key",
         model="text-embedding-v4"
     )
     assert client3.dimensions == 1024
 
-    client4 = OpenAICompatEmbeddingClient(
+    client4 = OpenAIEmbeddingClient(
         api_key="test_key",
         model="text-embedding-v3"
     )
     assert client4.dimensions == 1024
 
     # Unknown model (default)
-    client5 = OpenAICompatEmbeddingClient(
+    client5 = OpenAIEmbeddingClient(
         api_key="test_key",
         model="unknown-model"
     )
     assert client5.dimensions == 1536
 
 
-@patch("isobase.knowledge.embeddings.openai_compat.OpenAI")
+@patch("isobase.knowledge.embeddings.openai.OpenAI")
 def test_embed_texts_with_api_error(mock_openai_class):
     """Test handling of API errors."""
     mock_client = MagicMock()
@@ -166,13 +166,13 @@ def test_embed_texts_with_api_error(mock_openai_class):
     # Simulate API error
     mock_client.embeddings.create.side_effect = Exception("API Error")
 
-    client = OpenAICompatEmbeddingClient(api_key="test_key")
+    client = OpenAIEmbeddingClient(api_key="test_key")
 
     with pytest.raises(RuntimeError, match="Embedding API call failed"):
         client.embed_texts(["test"])
 
 
-@patch("isobase.knowledge.embeddings.openai_compat.OpenAI")
+@patch("isobase.knowledge.embeddings.openai.OpenAI")
 def test_default_kwargs(mock_openai_class):
     """Test default kwargs are passed to API."""
     mock_client = MagicMock()
@@ -181,7 +181,7 @@ def test_default_kwargs(mock_openai_class):
     mock_response = MockEmbeddingResponse([[0.1, 0.2]])
     mock_client.embeddings.create.return_value = mock_response
 
-    client = OpenAICompatEmbeddingClient(
+    client = OpenAIEmbeddingClient(
         api_key="test_key",
         encoding_format="float",
         custom_param="value"

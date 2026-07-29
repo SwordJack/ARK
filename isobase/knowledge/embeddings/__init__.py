@@ -9,9 +9,9 @@
 """
 
 from .base import BaseEmbeddingClient
-from .openai_compat import OpenAICompatEmbeddingClient
+from .openai import OpenAIEmbeddingClient
 
 __all__ = [
     "BaseEmbeddingClient",
-    "OpenAICompatEmbeddingClient",
+    "OpenAIEmbeddingClient",
 ]

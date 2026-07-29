@@ -15,12 +15,12 @@
 
 ```python
 from isobase.knowledge import KnowledgeBaseService
-from isobase.knowledge.embeddings import OpenAICompatEmbeddingClient
+from isobase.knowledge.embeddings import OpenAIEmbeddingClient
 from isobase.knowledge.chunking import FixedSizeChunker
 from isobase.knowledge.stores import MemoryKnowledgeStore
 
 # 初始化组件
-embedding_client = OpenAICompatEmbeddingClient(
+embedding_client = OpenAIEmbeddingClient(
     api_key="your_api_key",
     base_url="https://api.aimlapi.com/v1",
     model="alibaba/qwen-text-embedding-v4",
@@ -141,9 +141,9 @@ print(response.content)
 ### Qwen Text Embedding v4 (AIMLAPI)
 
 ```python
-from isobase.knowledge.embeddings import OpenAICompatEmbeddingClient
+from isobase.knowledge.embeddings import OpenAIEmbeddingClient
 
-client = OpenAICompatEmbeddingClient(
+client = OpenAIEmbeddingClient(
     api_key="your_aimlapi_key",
     base_url="https://api.aimlapi.com/v1",
     model="alibaba/qwen-text-embedding-v4",
@@ -160,9 +160,9 @@ client = OpenAICompatEmbeddingClient(
 
 ```python
 import os
-from isobase.knowledge.embeddings import OpenAICompatEmbeddingClient
+from isobase.knowledge.embeddings import OpenAIEmbeddingClient
 
-client = OpenAICompatEmbeddingClient(
+client = OpenAIEmbeddingClient(
     api_key=os.getenv("DASHSCOPE_API_KEY"),
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     model="text-embedding-v4",
@@ -179,9 +179,9 @@ client = OpenAICompatEmbeddingClient(
 
 ```python
 import os
-from isobase.knowledge.embeddings import OpenAICompatEmbeddingClient
+from isobase.knowledge.embeddings import OpenAIEmbeddingClient
 
-client = OpenAICompatEmbeddingClient(
+client = OpenAIEmbeddingClient(
     api_key=os.getenv("OPENAI_API_KEY"),
     model="text-embedding-3-small",  # 或 text-embedding-3-large
 )
@@ -198,7 +198,7 @@ isobase/knowledge/
 ├── entities.py          # 核心 DTO（KnowledgeBase, Document, Chunk, RetrievalResult）
 ├── embeddings/
 │   ├── base.py         # BaseEmbeddingClient 抽象基类
-│   └── openai_compat.py # OpenAI 兼容客户端
+│   └── openai.py # OpenAI 兼容客户端
 ├── chunking/
 │   ├── base.py         # BaseChunker 抽象基类
 │   └── fixed.py        # 固定大小分块器（带重叠）

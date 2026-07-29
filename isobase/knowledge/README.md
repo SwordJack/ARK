@@ -15,12 +15,12 @@ This module provides tools for indexing documents and retrieving relevant contex
 
 ```python
 from isobase.knowledge import KnowledgeBaseService
-from isobase.knowledge.embeddings import OpenAICompatEmbeddingClient
+from isobase.knowledge.embeddings import OpenAIEmbeddingClient
 from isobase.knowledge.chunking import FixedSizeChunker
 from isobase.knowledge.stores import MemoryKnowledgeStore
 
 # Initialize components
-embedding_client = OpenAICompatEmbeddingClient(
+embedding_client = OpenAIEmbeddingClient(
     api_key="your_api_key",
     base_url="https://api.aimlapi.com/v1",
     model="alibaba/qwen-text-embedding-v4",
@@ -149,9 +149,9 @@ print(response.content)
 ### Qwen Text Embedding v4 (AIMLAPI)
 
 ```python
-from isobase.knowledge.embeddings import OpenAICompatEmbeddingClient
+from isobase.knowledge.embeddings import OpenAIEmbeddingClient
 
-client = OpenAICompatEmbeddingClient(
+client = OpenAIEmbeddingClient(
     api_key="your_aimlapi_key",
     base_url="https://api.aimlapi.com/v1",
     model="alibaba/qwen-text-embedding-v4",
@@ -169,9 +169,9 @@ client = OpenAICompatEmbeddingClient(
 
 ```python
 import os
-from isobase.knowledge.embeddings import OpenAICompatEmbeddingClient
+from isobase.knowledge.embeddings import OpenAIEmbeddingClient
 
-client = OpenAICompatEmbeddingClient(
+client = OpenAIEmbeddingClient(
     api_key=os.getenv("DASHSCOPE_API_KEY"),
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     model="text-embedding-v4",
@@ -189,9 +189,9 @@ client = OpenAICompatEmbeddingClient(
 
 ```python
 import os
-from isobase.knowledge.embeddings import OpenAICompatEmbeddingClient
+from isobase.knowledge.embeddings import OpenAIEmbeddingClient
 
-client = OpenAICompatEmbeddingClient(
+client = OpenAIEmbeddingClient(
     api_key=os.getenv("OPENAI_API_KEY"),
     model="text-embedding-3-small",  # or text-embedding-3-large
 )
@@ -209,7 +209,7 @@ isobase/knowledge/
 ├── entities.py          # Core DTOs (KnowledgeBase, Document, Chunk, RetrievalResult)
 ├── embeddings/
 │   ├── base.py         # BaseEmbeddingClient ABC
-│   └── openai_compat.py # OpenAI-compatible client
+│   └── openai.py # OpenAI-compatible client
 ├── chunking/
 │   ├── base.py         # BaseChunker ABC
 │   └── fixed.py        # Fixed-size chunker with overlap
