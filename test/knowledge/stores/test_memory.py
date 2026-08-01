@@ -2,8 +2,8 @@
 # -*- encoding: utf-8 -*-
 """Tests for knowledge store backends.
 
-@File   :   test_stores.py
-@Created:   2026/07/29 00:00
+@File   :   test_memory.py
+@Created:   2026/07/29 00:00 (UTC+08:00)
 @Author :   SwordJack
 @Contact:   https://github.com/SwordJack/
 """
