@@ -636,7 +636,7 @@ class KnowledgeBaseService:
             id=str(uuid.uuid4()),
             name=name,
             description=description,
-            embedding_model_id=getattr(self.embedding_client, "model", "unknown"),
+            embedding_model_id=self.embedding_client.model,
             dimensions=self.embedding_client.dimensions,
             metadata=metadata or {},
         )
