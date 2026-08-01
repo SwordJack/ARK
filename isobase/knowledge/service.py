@@ -45,6 +45,7 @@ class KnowledgeBaseService:
         embedding_client: BaseEmbeddingClient,
         store: BaseKnowledgeStore,
         chunker: BaseChunker,
+        embed_batch_size: int = 20,
     ):
         """Initializes the knowledge base service.
 
@@ -52,10 +53,14 @@ class KnowledgeBaseService:
             embedding_client: Client for generating text embeddings.
             store: Storage backend for knowledge bases and vectors.
             chunker: Chunking strategy for splitting documents.
+            embed_batch_size: Max chunks per embedding API call.  Defaults
+                to a conservative value that works across common providers
+                (DashScope: 20, OpenAI: 2048).
         """
         self.embedding_client = embedding_client
         self.store = store
         self.chunker = chunker
+        self.embed_batch_size = embed_batch_size
 
     def create_knowledge_base(
         self,
@@ -99,7 +104,6 @@ class KnowledgeBaseService:
         title: str = "",
         source_uri: str = "",
         metadata: Optional[Dict[str, Any]] = None,
-        embed_batch_size: int = 20,
     ) -> KnowledgeDocument:
         """Indexes a text document into a knowledge base.
 
@@ -111,8 +115,6 @@ class KnowledgeBaseService:
             title: Document title (defaults to "Untitled").
             source_uri: Source URL or file path.
             metadata: Additional metadata (author, date, tags, etc.).
-            embed_batch_size: Number of chunks to embed per API call 
-                (to respect provider limits. e.g., DashScope: ≤20 per request, OpenAI: ≤2048).
 
         Returns:
             The created document with its indexed chunks.
@@ -172,8 +174,8 @@ class KnowledgeBaseService:
         ]
         
         all_embeddings: List[List[float]] = []
-        for batch_start in range(0, len(chunks), embed_batch_size):
-            batch = chunks[batch_start:batch_start + embed_batch_size]
+        for batch_start in range(0, len(chunks), self.embed_batch_size):
+            batch = chunks[batch_start:batch_start + self.embed_batch_size]
             batch_embeddings = self.embedding_client.embed_texts(
                 [c.content for c in batch]
             )
