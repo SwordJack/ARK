@@ -77,11 +77,8 @@ class OpenAIEmbeddingClient(BaseEmbeddingClient):
         if not api_key:
             raise ValueError("api_key cannot be empty")
 
+        super().__init__(model=model, dimensions=dimensions, **kwargs)
         self.client = OpenAI(api_key=api_key, base_url=base_url)
-        self.model = model
-        self._dimensions = dimensions
-        self._inferred_dimensions: Optional[int] = None
-        self.default_kwargs = kwargs
 
     def _infer_dimensions_from_response(self, embedding: List[float]) -> None:
         """Cache the dimension count from a single embedding vector."""
@@ -234,8 +231,8 @@ class OpenAIEmbeddingClient(BaseEmbeddingClient):
             )
 
             if response.data:
-                embedding = response.data[0].embedding
-                self._inferred_dimensions = len(embedding)
+                self._infer_dimensions_from_response(response.data[0].embedding)
+                assert self._inferred_dimensions is not None
                 return self._inferred_dimensions
 
             raise RuntimeError("Empty response from embedding API")

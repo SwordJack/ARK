@@ -20,7 +20,7 @@ class FakeEmbeddingClient(BaseEmbeddingClient):
     """Fake embedding client for testing without API calls."""
 
     def __init__(self, dimensions: int = 128):
-        self._dimensions = dimensions
+        super().__init__(dimensions=dimensions)
 
     def embed_texts(self, texts: List[str], **kwargs) -> List[List[float]]:
         """Generates deterministic fake embeddings."""

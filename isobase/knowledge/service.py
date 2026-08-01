@@ -85,7 +85,7 @@ class KnowledgeBaseService:
             id=str(uuid.uuid4()),
             name=name,
             description=description,
-            embedding_model_id=getattr(self.embedding_client, "model", "unknown"),
+            embedding_model_id=self.embedding_client.model,
             dimensions=self.embedding_client.dimensions,
             chunk_size=getattr(self.chunker, "chunk_size", 0),
             chunk_overlap=getattr(self.chunker, "chunk_overlap", 0),

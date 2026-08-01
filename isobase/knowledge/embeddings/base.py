@@ -9,7 +9,7 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Any, List, Optional
 
 
 class BaseEmbeddingClient(ABC):
@@ -21,6 +21,29 @@ class BaseEmbeddingClient(ABC):
     Embedding models convert text into fixed-dimensional vectors that
     capture semantic meaning for similarity search.
     """
+
+    def __init__(
+        self,
+        model: Optional[str] = None,
+        dimensions: Optional[int] = None,
+        **kwargs: Any
+    ):
+        """Initializes the base embedding client.
+
+        Args:
+            model: Optional model identifier.
+            dimensions: Optional explicit dimension override.
+            **kwargs: Additional provider-specific parameters.
+        """
+        self.model = model
+        self._dimensions = dimensions
+        self.default_kwargs = kwargs
+        self._inferred_dimensions: Optional[int] = None
+
+    def _infer_dimensions_from_response(self, embedding: List[float]) -> None:
+        """Cache the dimension count from a single embedding vector."""
+        if not self._inferred_dimensions:
+            self._inferred_dimensions = len(embedding)
 
     # ------------------------------------------------------------------
     # Core embedding methods (must be implemented by subclasses)
