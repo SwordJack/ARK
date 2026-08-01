@@ -34,6 +34,7 @@ service = KnowledgeBaseService(
     embedding_client=embedding_client,
     store=store,
     chunker=chunker,
+    embed_batch_size=20,  # 每次 API 调用的最大块数（默认 20，兼容 DashScope）
 )
 
 # 创建知识库
@@ -171,7 +172,7 @@ client = OpenAIEmbeddingClient(
 **特性：**
 
 - 中文原生优化
-- 批处理: 最多 25 个文本/请求
+- 批处理: 最多 20 个文本/请求（`KnowledgeBaseService` 自动分批）
 - 模型: v3, v4
 
 ### OpenAI
@@ -324,9 +325,9 @@ store = MemoryKnowledgeStore()
 
 **使用场景：** 测试、演示、小数据集（<10K 块）
 
-### SQL 存储（未来）
+### SQL 存储
 
-使用 SQLAlchemy 的持久存储：
+使用 SQLAlchemy 的持久存储（SQLite / PostgreSQL）：
 
 ```python
 from isobase.knowledge.stores import SqlKnowledgeStore
@@ -341,6 +342,7 @@ store = SqlKnowledgeStore(db_service)
 - 持久存储
 - SQLite 和 PostgreSQL 支持
 - 与现有 `database/sql.py` 集成
+- `document.content` 是全文的唯一持久来源；chunk 内容在读取时派生
 
 ## 路线图
 
@@ -355,7 +357,9 @@ store = SqlKnowledgeStore(db_service)
 
 ### Phase 2: SQL 持久化
 
-- [ ] SQL 后端存储
+- ✅ SQL 后端存储 (`SqlKnowledgeStore`)
+- ✅ 生命周期 API: 文档和知识库的 `get` / `list` / `delete`
+- ✅ `KnowledgeBaseService` 构造函数 `embed_batch_size`
 - [ ] 模式迁移
 - [ ] 向量存储（初始为 JSON）
 

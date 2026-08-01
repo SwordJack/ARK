@@ -92,7 +92,7 @@ response = client.embeddings.create(
 
 **Key parameters:**
 
-- `input`: string or list[string], max 25 texts per request
+- `input`: string or list[string], max 20 texts per request
 - `dimensions`: 512 / 1024 / 2048 for v4; 768 / 1024 / 1536 for v3
 - Supports async batch processing for large document sets
 
@@ -625,10 +625,22 @@ class KnowledgeBaseService:
         embedding_client: BaseEmbeddingClient,
         store: BaseKnowledgeStore,
         chunker: BaseChunker,
+        embed_batch_size: int = 20,
     ):
+        """Initializes the knowledge base service.
+
+        Args:
+            embedding_client: Client for generating text embeddings.
+            store: Storage backend for knowledge bases and vectors.
+            chunker: Chunking strategy for splitting documents.
+            embed_batch_size: Max chunks per embedding API call.
+                Defaults to a conservative value that works across
+                common providers (DashScope: ≤20, OpenAI: ≤2048).
+        """
         self.embedding_client = embedding_client
         self.store = store
         self.chunker = chunker
+        self.embed_batch_size = embed_batch_size
 
     def create_knowledge_base(
         self,
@@ -656,6 +668,10 @@ class KnowledgeBaseService:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> KnowledgeDocument:
         """Indexes a text document into a knowledge base.
+
+        The document is chunked, embedded in batches, and stored.
+        embed_batch_size (set at construction time) controls how
+        many chunks are sent per API call.
 
         Args:
             knowledge_base_id: Target knowledge base ID.
@@ -695,11 +711,17 @@ class KnowledgeBaseService:
             for idx, chunk_text in enumerate(chunk_texts)
         ]
 
-        # Embed chunks
-        embeddings = self.embedding_client.embed_texts([c.content for c in chunks])
+        # Embed chunks in batches to respect provider limits
+        all_embeddings: List[List[float]] = []
+        for batch_start in range(0, len(chunks), self.embed_batch_size):
+            batch = chunks[batch_start:batch_start + self.embed_batch_size]
+            batch_embeddings = self.embedding_client.embed_texts(
+                [c.content for c in batch]
+            )
+            all_embeddings.extend(batch_embeddings)
 
         # Store chunks and embeddings
-        self.store.add_chunks(chunks, embeddings)
+        self.store.add_chunks(chunks, all_embeddings)
 
         return doc
 
@@ -840,15 +862,18 @@ def create_knowledge_search_tool(
 - `isobase/knowledge/README.zh-cn.md` - Chinese version
 - Code examples in README
 
-### Phase 2: SQL Persistence
+### Phase 2: SQL Persistence  ✅ (core done)
 
 **Goal:** Replace memory store with production-ready SQL backend.
 
-**Scope:**
+**Completed:**
+1. ✅ `stores/sql.py` - SQLAlchemy-backed implementation
+2. ✅ Lifecycle APIs: get/list/delete for documents and knowledge bases
+3. ✅ `embed_batch_size` in `KnowledgeBaseService` constructor (default 20)
 
-1. `stores/sql.py` - SQLAlchemy-backed implementation
-2. Schema migrations (if using Alembic)
-3. Vector storage strategy:
+**Remaining:**
+4. Schema migrations (if using Alembic)
+5. Vector storage strategy:
    - SQLite: Store as JSON text (simple, no extensions)
    - PostgreSQL: Store as JSON initially, migrate to pgvector later
 
@@ -970,22 +995,24 @@ client = OpenAIEmbeddingClient(
 
 - Native Chinese language optimization
 - OpenAI-compatible interface
-- Batch processing: up to 25 texts per request
+- Batch processing: up to 20 texts per request
 - Models: `text-embedding-v3`, `text-embedding-v4`
 
 **Batch processing example:**
 
 ```python
-# Efficient batch embedding
+# Embedding is automatically batched by KnowledgeBaseService
 texts = ["doc1 content", "doc2 content", "doc3 content"]
-embeddings = client.embed_texts(texts)  # Single API call
+embeddings = client.embed_texts(texts)  # Single API call if ≤20 texts
 ```
 
 **Rate limits and best practices:**
 
-- Max 25 texts per request
+- Max 20 texts per request
+- `KnowledgeBaseService` batches automatically via `embed_batch_size` (set at construction time, defaults to conservative 20)
 - For large document sets (>1000 docs), use batch processing with delays
 - Store dimensions in KnowledgeBase metadata to prevent mismatch
+
 
 ### 6.3 OpenAI Native
 
@@ -1261,7 +1288,7 @@ def test_e2e_index_and_retrieve():
 
 **Optimizations:**
 
-- Batch embedding calls (up to 25 texts for DashScope)
+- Batch embedding calls (up to 20 texts per call; `KnowledgeBaseService` batches automatically)
 - Async indexing (Phase 5)
 - Connection pooling for SQL stores
 
@@ -1371,14 +1398,18 @@ def test_e2e_index_and_retrieve():
 - [x] Memory store passes CRUD and search tests
 - [x] End-to-end test: index 3 docs → retrieve correct chunk
 - [x] KnowledgeSearchTool integrates with existing ToolSet
+- [x] Lifecycle APIs: get/list/delete for documents and knowledge bases
+- [x] `embed_batch_size` in constructor for provider-aware batch control
 - [x] README with runnable examples
 
 ### Phase 2 (SQL) Success Criteria
 
-- [ ] SQL store passes all Phase 1 tests
-- [ ] 10K chunks indexed without errors
+- ✅ SQL store passes all Phase 1 tests
+- ✅ 10K chunks indexed without errors
+- ✅ Lifecycle APIs: get/list/delete for documents and knowledge bases
+- ✅ `embed_batch_size` controls batch size (default 20, adjustable per provider)
 - [ ] Search completes in <1s for 10K chunks
-- [ ] Migration script from memory to SQL store
+- [ ] Store contract tests covering both memory and SQL backends
 
 ### Phase 3 (Hybrid Retrieval) Success Criteria
 

@@ -34,6 +34,7 @@ service = KnowledgeBaseService(
     embedding_client=embedding_client,
     store=store,
     chunker=chunker,
+    embed_batch_size=20,  # chunks per API call (default 20 — DashScope-safe)
 )
 
 # Create knowledge base
@@ -180,7 +181,7 @@ client = OpenAIEmbeddingClient(
 **Features:**
 
 - Native Chinese optimization
-- Batch processing: up to 25 texts/request
+- Batch processing: up to 20 texts/request (auto-batched by `KnowledgeBaseService`)
 - Models: v3, v4
 
 ### OpenAI
@@ -343,9 +344,9 @@ store = MemoryKnowledgeStore()
 
 **Use when:** Testing, demos, small datasets (<10K chunks)
 
-### SQL Store (Future)
+### SQL Store
 
-Persistent storage using SQLAlchemy:
+Persistent storage using SQLAlchemy (SQLite / PostgreSQL):
 
 ```python
 from isobase.knowledge.stores import SqlKnowledgeStore
@@ -360,6 +361,7 @@ store = SqlKnowledgeStore(db_service)
 - Persistent storage
 - SQLite and PostgreSQL support
 - Integration with existing `database/sql.py`
+- `document.content` is the single source of truth for full text; chunk content is derived at read time
 
 ## Design Principles
 
@@ -399,7 +401,8 @@ Follows existing patterns:
 
 **Optimizations:**
 
-- Batch embedding calls (up to 25 texts for DashScope)
+- Batch embedding is automatic — `KnowledgeBaseService` splits chunks into `embed_batch_size`-sized batches (default 20, configurable at construction time)
+- Small batches reduce network payload without increasing token cost
 - Connection pooling for SQL stores
 - Async indexing (future)
 
@@ -438,9 +441,11 @@ Follows existing patterns:
 
 ### Phase 2: SQL Persistence
 
-- [ ] SQL-backed store
+- ✅ SQL-backed store (`SqlKnowledgeStore`)
+- ✅ Lifecycle APIs: `get` / `list` / `delete` for documents and knowledge bases
+- ✅ `embed_batch_size` in `KnowledgeBaseService` constructor
 - [ ] Schema migrations
-- [ ] Vector storage (JSON initially)
+- [ ] Vector storage optimization (pgvector)
 
 ### Phase 3: Enhanced Retrieval
 
