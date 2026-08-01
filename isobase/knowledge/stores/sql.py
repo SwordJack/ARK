@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, select
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, delete, select
 from sqlalchemy.orm import DeclarativeBase, Session
 
 from isobase.database.sql import SqlDbService
@@ -158,6 +158,57 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
                 raise KeyError(f"Knowledge base {kb_id} not found")
             return self._model_to_kb(model)
 
+    def list_knowledge_bases(self) -> list[KnowledgeBase]:
+        """Lists all knowledge bases.
+
+        Returns:
+            List of all knowledge bases. May be empty.
+        """
+        with self.sql_service.create_session() as session:
+            models = session.execute(
+                select(KnowledgeBaseModel)
+            ).scalars().all()
+            return [self._model_to_kb(m) for m in models]
+
+    def delete_knowledge_base(self, kb_id: str) -> None:
+        """Deletes a knowledge base and all its documents/chunks/embeddings.
+
+        Args:
+            kb_id: Knowledge base identifier.
+
+        Raises:
+            KeyError: If knowledge base not found.
+        """
+        with self.sql_service.create_session() as session:
+            if session.get(KnowledgeBaseModel, kb_id) is None:
+                raise KeyError(f"Knowledge base {kb_id} not found")
+
+            # Cascade-delete: embeddings -> chunks -> documents -> kb
+            chunk_rows = session.execute(
+                select(KnowledgeChunkModel.id)
+                .where(KnowledgeChunkModel.knowledge_base_id == kb_id)
+            ).all()
+            chunk_ids = [row[0] for row in chunk_rows]
+            if chunk_ids:
+                session.execute(
+                    delete(KnowledgeEmbeddingModel)
+                    .where(KnowledgeEmbeddingModel.chunk_id.in_(chunk_ids))
+                )
+                session.execute(
+                    delete(KnowledgeChunkModel)
+                    .where(KnowledgeChunkModel.id.in_(chunk_ids))
+                )
+
+            session.execute(
+                delete(KnowledgeDocumentModel)
+                .where(KnowledgeDocumentModel.knowledge_base_id == kb_id)
+            )
+            session.execute(
+                delete(KnowledgeBaseModel)
+                .where(KnowledgeBaseModel.id == kb_id)
+            )
+            session.commit()
+
     def add_document(self, doc: KnowledgeDocument) -> KnowledgeDocument:
         """Stores a document.
 
@@ -183,6 +234,79 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
             session.add(self._doc_to_model(doc))
             session.commit()
         return doc
+
+    def get_document(self, doc_id: str) -> KnowledgeDocument:
+        """Retrieves a document by ID.
+
+        Args:
+            doc_id: Document identifier.
+
+        Returns:
+            The document object.
+
+        Raises:
+            KeyError: If document not found.
+        """
+        with self.sql_service.create_session() as session:
+            model = session.get(KnowledgeDocumentModel, doc_id)
+            if model is None:
+                raise KeyError(f"Document {doc_id} not found")
+            return self._model_to_doc(model)
+
+    def list_documents(self, kb_id: str) -> list[KnowledgeDocument]:
+        """Lists all documents in a knowledge base.
+
+        Args:
+            kb_id: Knowledge base identifier.
+
+        Returns:
+            List of documents. May be empty.
+
+        Raises:
+            KeyError: If knowledge base not found.
+        """
+        with self.sql_service.create_session() as session:
+            if session.get(KnowledgeBaseModel, kb_id) is None:
+                raise KeyError(f"Knowledge base {kb_id} not found")
+            models = session.execute(
+                select(KnowledgeDocumentModel)
+                .where(KnowledgeDocumentModel.knowledge_base_id == kb_id)
+            ).scalars().all()
+            return [self._model_to_doc(m) for m in models]
+
+    def delete_document(self, doc_id: str) -> None:
+        """Deletes a document and all its chunks/embeddings.
+
+        Args:
+            doc_id: Document identifier.
+
+        Raises:
+            KeyError: If document not found.
+        """
+        with self.sql_service.create_session() as session:
+            if session.get(KnowledgeDocumentModel, doc_id) is None:
+                raise KeyError(f"Document {doc_id} not found")
+
+            chunk_rows = session.execute(
+                select(KnowledgeChunkModel.id)
+                .where(KnowledgeChunkModel.document_id == doc_id)
+            ).all()
+            chunk_ids = [row[0] for row in chunk_rows]
+            if chunk_ids:
+                session.execute(
+                    delete(KnowledgeEmbeddingModel)
+                    .where(KnowledgeEmbeddingModel.chunk_id.in_(chunk_ids))
+                )
+                session.execute(
+                    delete(KnowledgeChunkModel)
+                    .where(KnowledgeChunkModel.id.in_(chunk_ids))
+                )
+
+            session.execute(
+                delete(KnowledgeDocumentModel)
+                .where(KnowledgeDocumentModel.id == doc_id)
+            )
+            session.commit()
 
     def add_chunks(
         self,

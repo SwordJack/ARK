@@ -364,3 +364,194 @@ def test_memory_store_search_top_k():
     results = store.search("kb1", query_embedding, top_k=3)
 
     assert len(results) == 3
+
+
+# ---------------------------------------------------------------------
+# Document lifecycle
+# ---------------------------------------------------------------------
+
+def test_memory_store_get_document():
+    """Test retrieving a document by ID."""
+    store = MemoryKnowledgeStore()
+
+    kb = KnowledgeBase(id="kb1", name="Test KB")
+    store.create_knowledge_base(kb)
+
+    doc = KnowledgeDocument(id="doc1", knowledge_base_id="kb1", title="Test Doc")
+    store.add_document(doc)
+
+    retrieved = store.get_document("doc1")
+    assert retrieved.id == "doc1"
+    assert retrieved.title == "Test Doc"
+
+
+def test_memory_store_get_document_not_found():
+    """Test retrieving non-existent document raises KeyError."""
+    store = MemoryKnowledgeStore()
+
+    with pytest.raises(KeyError, match="not found"):
+        store.get_document("nonexistent")
+
+
+def test_memory_store_delete_document():
+    """Test deleting a document removes it and its chunks/embeddings."""
+    store = MemoryKnowledgeStore()
+
+    store.create_knowledge_base(KnowledgeBase(id="kb1", name="Test KB"))
+    store.add_document(KnowledgeDocument(id="doc1", knowledge_base_id="kb1", title="Test Doc"))
+
+    chunks = [
+        KnowledgeChunk(id="c1", document_id="doc1", knowledge_base_id="kb1", content="chunk 1", index=0),
+        KnowledgeChunk(id="c2", document_id="doc1", knowledge_base_id="kb1", content="chunk 2", index=1),
+    ]
+    embeddings = [[1.0, 0.0], [0.0, 1.0]]
+    store.add_chunks(chunks, embeddings)
+
+    store.delete_document("doc1")
+
+    # Document is gone
+    with pytest.raises(KeyError):
+        store.get_document("doc1")
+
+    # Chunks and embeddings are gone
+    assert "c1" not in store.chunks
+    assert "c2" not in store.chunks
+    assert "c1" not in store.embeddings
+    assert "c2" not in store.embeddings
+
+    # Search returns nothing
+    results = store.search("kb1", [1.0, 0.0])
+    assert results == []
+
+
+def test_memory_store_delete_document_not_found():
+    """Test deleting non-existent document raises KeyError."""
+    store = MemoryKnowledgeStore()
+
+    with pytest.raises(KeyError, match="not found"):
+        store.delete_document("nonexistent")
+
+
+def test_memory_store_delete_document_leaves_other_docs():
+    """Test deleting one document does not affect another in the same KB."""
+    store = MemoryKnowledgeStore()
+
+    store.create_knowledge_base(KnowledgeBase(id="kb1", name="Test KB"))
+
+    store.add_document(KnowledgeDocument(id="doc1", knowledge_base_id="kb1", title="Keep"))
+    store.add_chunks(
+        [KnowledgeChunk(id="c1", document_id="doc1", knowledge_base_id="kb1", content="kept", index=0)],
+        [[1.0, 0.0]],
+    )
+
+    store.add_document(KnowledgeDocument(id="doc2", knowledge_base_id="kb1", title="Remove"))
+    store.add_chunks(
+        [KnowledgeChunk(id="c2", document_id="doc2", knowledge_base_id="kb1", content="removed", index=0)],
+        [[0.0, 1.0]],
+    )
+
+    store.delete_document("doc2")
+
+    # doc1 still accessible
+    retrieved = store.get_document("doc1")
+    assert retrieved.title == "Keep"
+
+    # c1 still searchable
+    results = store.search("kb1", [1.0, 0.0])
+    assert len(results) == 1
+    assert results[0].chunk.content == "kept"
+
+
+# ---------------------------------------------------------------------
+# Knowledge-base lifecycle
+# ---------------------------------------------------------------------
+
+def test_memory_store_delete_knowledge_base():
+    """Test deleting a knowledge base removes everything."""
+    store = MemoryKnowledgeStore()
+
+    store.create_knowledge_base(KnowledgeBase(id="kb1", name="Test KB"))
+    store.add_document(KnowledgeDocument(id="doc1", knowledge_base_id="kb1", title="Test Doc"))
+
+    chunks = [
+        KnowledgeChunk(id="c1", document_id="doc1", knowledge_base_id="kb1", content="chunk 1", index=0),
+    ]
+    embeddings = [[1.0, 0.0]]
+    store.add_chunks(chunks, embeddings)
+
+    store.delete_knowledge_base("kb1")
+
+    # KB is gone
+    with pytest.raises(KeyError):
+        store.get_knowledge_base("kb1")
+
+    # Document is gone
+    with pytest.raises(KeyError):
+        store.get_document("doc1")
+
+    # Chunks and embeddings are gone
+    assert "c1" not in store.chunks
+    assert "c1" not in store.embeddings
+
+
+def test_memory_store_delete_knowledge_base_not_found():
+    """Test deleting non-existent knowledge base raises KeyError."""
+    store = MemoryKnowledgeStore()
+
+    with pytest.raises(KeyError, match="not found"):
+        store.delete_knowledge_base("nonexistent")
+
+
+# ---------------------------------------------------------------------
+# List methods
+# ---------------------------------------------------------------------
+
+def test_memory_store_list_knowledge_bases():
+    """Test listing all knowledge bases."""
+    store = MemoryKnowledgeStore()
+
+    store.create_knowledge_base(KnowledgeBase(id="kb1", name="First"))
+    store.create_knowledge_base(KnowledgeBase(id="kb2", name="Second"))
+
+    kbs = store.list_knowledge_bases()
+    names = {kb.name for kb in kbs}
+
+    assert len(kbs) == 2
+    assert names == {"First", "Second"}
+
+
+def test_memory_store_list_knowledge_bases_empty():
+    """Test listing knowledge bases when none exist."""
+    store = MemoryKnowledgeStore()
+    assert store.list_knowledge_bases() == []
+
+
+def test_memory_store_list_documents():
+    """Test listing documents in a knowledge base."""
+    store = MemoryKnowledgeStore()
+
+    store.create_knowledge_base(KnowledgeBase(id="kb1", name="Test KB"))
+    store.add_document(KnowledgeDocument(id="doc1", knowledge_base_id="kb1", title="Doc A"))
+    store.add_document(KnowledgeDocument(id="doc2", knowledge_base_id="kb1", title="Doc B"))
+
+    docs = store.list_documents("kb1")
+    titles = {doc.title for doc in docs}
+
+    assert len(docs) == 2
+    assert titles == {"Doc A", "Doc B"}
+
+
+def test_memory_store_list_documents_empty():
+    """Test listing documents in a knowledge base with no documents."""
+    store = MemoryKnowledgeStore()
+    store.create_knowledge_base(KnowledgeBase(id="kb1", name="Test KB"))
+
+    assert store.list_documents("kb1") == []
+
+
+def test_memory_store_list_documents_invalid_kb():
+    """Test listing documents for non-existent knowledge base."""
+    store = MemoryKnowledgeStore()
+
+    with pytest.raises(KeyError, match="not found"):
+        store.list_documents("nonexistent")

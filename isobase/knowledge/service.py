@@ -40,7 +40,6 @@ class KnowledgeBaseService:
         service.index_text(kb.id, text="RAG is...", title="RAG Overview")
         results = service.retrieve(query="What is RAG?", knowledge_base_id=kb.id)
     """
-
     def __init__(
         self,
         embedding_client: BaseEmbeddingClient,
@@ -222,6 +221,72 @@ class KnowledgeBaseService:
         )
 
         return results
+
+    def get_document(self, document_id: str) -> KnowledgeDocument:
+        """Retrieves a document by ID.
+
+        Args:
+            document_id: Document identifier.
+
+        Returns:
+            The document object.
+
+        Raises:
+            KeyError: If document not found.
+        """
+        return self.store.get_document(document_id)
+
+    def list_knowledge_bases(self) -> list[KnowledgeBase]:
+        """Lists all knowledge bases.
+
+        Returns:
+            List of all knowledge bases. May be empty.
+        """
+        return self.store.list_knowledge_bases()
+
+    def list_documents(self, kb_id: str) -> list[KnowledgeDocument]:
+        """Lists all documents in a knowledge base.
+
+        Args:
+            kb_id: Knowledge base identifier.
+
+        Returns:
+            List of documents. May be empty.
+
+        Raises:
+            KeyError: If knowledge base not found.
+        """
+        return self.store.list_documents(kb_id)
+
+    def delete_document(self, document_id: str) -> None:
+        """Deletes a document and all its chunks/embeddings from the store.
+
+        After deletion the document and every piece of indexed text that
+        belonged to it is gone — retrieval will no longer surface those
+        chunks.  This is the recommended way to remove stale or unwanted
+        content from a knowledge base.
+
+        Args:
+            document_id: Document identifier.
+
+        Raises:
+            KeyError: If document not found.
+        """
+        self.store.delete_document(document_id)
+
+    def delete_knowledge_base(self, kb_id: str) -> None:
+        """Deletes a knowledge base and everything inside it.
+
+        This removes the knowledge base together with all its documents,
+        chunks, and embeddings.  Use with care — there is no undo.
+
+        Args:
+            kb_id: Knowledge base identifier.
+
+        Raises:
+            KeyError: If knowledge base not found.
+        """
+        self.store.delete_knowledge_base(kb_id)
 
     def retrieve_as_context(
         self,

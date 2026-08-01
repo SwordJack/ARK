@@ -115,6 +115,45 @@ class MemoryKnowledgeStore(BaseKnowledgeStore):
             raise KeyError(f"Knowledge base {kb_id} not found")
         return self.knowledge_bases[kb_id]
 
+    def list_knowledge_bases(self) -> list[KnowledgeBase]:
+        """Lists all knowledge bases.
+
+        Returns:
+            List of all knowledge bases. May be empty.
+        """
+        return list(self.knowledge_bases.values())
+
+    def delete_knowledge_base(self, kb_id: str) -> None:
+        """Deletes a knowledge base and all its documents/chunks/embeddings.
+
+        Args:
+            kb_id: Knowledge base identifier.
+
+        Raises:
+            KeyError: If knowledge base not found.
+        """
+        if kb_id not in self.knowledge_bases:
+            raise KeyError(f"Knowledge base {kb_id} not found")
+
+        # Collect and remove all documents/chunks/embeddings under this KB
+        doc_ids = [
+            doc_id for doc_id, doc in self.documents.items()
+            if doc.knowledge_base_id == kb_id
+        ]
+        for doc_id in doc_ids:
+            del self.documents[doc_id]
+
+        chunk_ids = [
+            chunk_id for chunk_id, chunk in self.chunks.items()
+            if chunk.knowledge_base_id == kb_id
+        ]
+        for chunk_id in chunk_ids:
+            del self.chunks[chunk_id]
+            if chunk_id in self.embeddings:
+                del self.embeddings[chunk_id]
+
+        del self.knowledge_bases[kb_id]
+
     def add_document(self, doc: KnowledgeDocument) -> KnowledgeDocument:
         """Stores a document.
 
@@ -139,6 +178,64 @@ class MemoryKnowledgeStore(BaseKnowledgeStore):
         doc.created_time = datetime.now(timezone.utc)
         self.documents[doc.id] = doc
         return doc
+
+    def get_document(self, doc_id: str) -> KnowledgeDocument:
+        """Retrieves a document by ID.
+
+        Args:
+            doc_id: Document identifier.
+
+        Returns:
+            The document object.
+
+        Raises:
+            KeyError: If document not found.
+        """
+        if doc_id not in self.documents:
+            raise KeyError(f"Document {doc_id} not found")
+        return self.documents[doc_id]
+
+    def list_documents(self, kb_id: str) -> list[KnowledgeDocument]:
+        """Lists all documents in a knowledge base.
+
+        Args:
+            kb_id: Knowledge base identifier.
+
+        Returns:
+            List of documents. May be empty.
+
+        Raises:
+            KeyError: If knowledge base not found.
+        """
+        if kb_id not in self.knowledge_bases:
+            raise KeyError(f"Knowledge base {kb_id} not found")
+        return [
+            doc for doc in self.documents.values()
+            if doc.knowledge_base_id == kb_id
+        ]
+
+    def delete_document(self, doc_id: str) -> None:
+        """Deletes a document and all its chunks/embeddings.
+
+        Args:
+            doc_id: Document identifier.
+
+        Raises:
+            KeyError: If document not found.
+        """
+        if doc_id not in self.documents:
+            raise KeyError(f"Document {doc_id} not found")
+
+        del self.documents[doc_id]
+
+        chunk_ids = [
+            chunk_id for chunk_id, chunk in self.chunks.items()
+            if chunk.document_id == doc_id
+        ]
+        for chunk_id in chunk_ids:
+            del self.chunks[chunk_id]
+            if chunk_id in self.embeddings:
+                del self.embeddings[chunk_id]
 
     def add_chunks(
         self,
