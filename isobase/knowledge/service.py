@@ -99,6 +99,7 @@ class KnowledgeBaseService:
         title: str = "",
         source_uri: str = "",
         metadata: Optional[Dict[str, Any]] = None,
+        embed_batch_size: int = 20,
     ) -> KnowledgeDocument:
         """Indexes a text document into a knowledge base.
 
@@ -110,6 +111,8 @@ class KnowledgeBaseService:
             title: Document title (defaults to "Untitled").
             source_uri: Source URL or file path.
             metadata: Additional metadata (author, date, tags, etc.).
+            embed_batch_size: Number of chunks to embed per API call 
+                (to respect provider limits. e.g., DashScope: ≤20 per request, OpenAI: ≤2048).
 
         Returns:
             The created document with its indexed chunks.
@@ -167,12 +170,17 @@ class KnowledgeBaseService:
             )
             for idx, chunk_text in enumerate(chunk_texts)
         ]
-
-        # Embed chunks
-        embeddings = self.embedding_client.embed_texts([c.content for c in chunks])
+        
+        all_embeddings: List[List[float]] = []
+        for batch_start in range(0, len(chunks), embed_batch_size):
+            batch = chunks[batch_start:batch_start + embed_batch_size]
+            batch_embeddings = self.embedding_client.embed_texts(
+                [c.content for c in batch]
+            )
+            all_embeddings.extend(batch_embeddings)
 
         # Store chunks and embeddings
-        self.store.add_chunks(chunks, embeddings)
+        self.store.add_chunks(chunks, all_embeddings)
 
         return doc
 

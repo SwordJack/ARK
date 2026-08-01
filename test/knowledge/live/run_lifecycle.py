@@ -5,8 +5,9 @@
 This script is intentionally **not** collected by pytest (it doesn't start
 with ``test_``) and never runs in CI.
 
-It uses a deterministic ``FakeEmbeddingClient`` so no API keys are needed.
-The only external dependency is a running PostgreSQL instance.
+It reads DashScope credentials from the same ``.env`` file used by
+``run_knowledge_basic.py`` and uses the real embedding API.  The only other
+external dependency is a running PostgreSQL instance.
 
 Usage
 -----
@@ -14,7 +15,10 @@ Usage
 
        createdb isobase
 
-2. Run from the repo root::
+2. Make sure the DashScope API key is configured in the ``.env`` file
+   sitting next to this script (see ``.env.example``).
+
+3. Run from the repo root::
 
        python -m test.knowledge.live.run_lifecycle
 
@@ -30,12 +34,13 @@ continue or Ctrl-C to abort.
 
 from __future__ import annotations
 
+import os
 import sys
-from typing import List
+from typing import Any, Dict, List, Optional
 
 from isobase.database.sql import SqlDbService
 from isobase.knowledge import KnowledgeBaseService
-from isobase.knowledge.embeddings import BaseEmbeddingClient
+from isobase.knowledge.embeddings import OpenAIEmbeddingClient
 from isobase.knowledge.chunking import FixedSizeChunker
 from isobase.knowledge.entities import (
     KnowledgeBase,
@@ -50,40 +55,67 @@ from isobase.knowledge.stores import SqlKnowledgeStore
 # ---------------------------------------------------------------------------
 PG_URI = "postgresql://postgres:postgres@localhost:5432/isobase"
 
-# ---------------------------------------------------------------------------
-# Fake embedding client (no API calls)
-# ---------------------------------------------------------------------------
-
-
-class FakeEmbeddingClient(BaseEmbeddingClient):
-    """Deterministic fake embeddings so no API key is ever needed."""
-
-    def __init__(self, dimensions: int = 128):
-        super().__init__(dimensions=dimensions)
-
-    def embed_texts(self, texts: List[str], **kwargs) -> List[List[float]]:
-        embeddings = []
-        for text in texts:
-            vec = []
-            for i in range(self._dimensions):
-                val = (len(text) + sum(ord(c) for c in text[:10]) + i) % 100 / 100.0
-                vec.append(val)
-            embeddings.append(vec)
-        return embeddings
-
-    def embed_query(self, query: str, **kwargs) -> List[float]:
-        return self.embed_texts([query], **kwargs)[0]
-
-    @property
-    def dimensions(self) -> int:
-        return self._dimensions
-
-    def fetch_dimensions(self) -> int:
-        return self._dimensions
+HERE = os.path.dirname(__file__)
+DATA_DIR = os.path.join(HERE, "data")
+CHAPTER_FILE = os.path.join(DATA_DIR, "chapter_000.md")
+ENV_PATH = os.path.join(HERE, ".env")
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers — .env loading (same convention as run_knowledge_basic.py)
+# ---------------------------------------------------------------------------
+
+
+def _load_env() -> Dict[str, str]:
+    """Parse the git-ignored .env file into a dict, or exit with guidance."""
+    if not os.path.exists(ENV_PATH):
+        sys.exit(
+            f"Missing {ENV_PATH}.\n"
+            "Copy the template and fill in real values:\n"
+            f"  cp {ENV_PATH}.example {ENV_PATH}"
+        )
+
+    env: Dict[str, str] = {}
+    with open(ENV_PATH, "r", encoding="utf-8") as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):]
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key:
+                env[key] = value
+    return env
+
+
+def _dashscope_client_kwargs(env: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    """Build kwargs for OpenAIEmbeddingClient from DASHSCOPE_EMBEDDING_* env vars.
+
+    Returns None when the API key is missing or still a placeholder.
+    """
+    prefix = "DASHSCOPE_EMBEDDING"
+    api_key = env.get(f"{prefix}_API_KEY", "").strip()
+    if not api_key or api_key.endswith("XXXXXX"):
+        return None
+
+    kwargs: Dict[str, Any] = {
+        "api_key": api_key,
+        "base_url": env.get(f"{prefix}_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+        "model": env.get(f"{prefix}_MODEL", "text-embedding-v4"),
+    }
+
+    dims = env.get(f"{prefix}_DIMENSIONS", "").strip()
+    if dims:
+        kwargs["dimensions"] = int(dims)
+
+    return kwargs
+
+
+# ---------------------------------------------------------------------------
+# Helpers — output & pause
 # ---------------------------------------------------------------------------
 
 
@@ -151,46 +183,35 @@ def _dump_result(r: RetrievalResult, i: int) -> None:
 # Test documents
 # ---------------------------------------------------------------------------
 
-_DOCUMENTS = [
-    {
-        "title": "RAG 概述",
-        "source_uri": "docs/rag.md",
-        "text": (
-            "RAG 全称 Retrieval-Augmented Generation（检索增强生成），是一种将信息检索与文本生成结合的技术。"
-            "RAG 系统首先从知识库中检索相关文档，然后将这些文档作为上下文用于生成回答。"
-            "这种方法可以帮助大语言模型提供更准确、更及时的信息，有效缓解模型幻觉问题。"
-            "RAG 的核心组件包括：文档解析器、文本分块器、嵌入模型、向量存储和检索引擎。"
-        ),
-        "metadata": {"author": "张三", "date": "2024-01-15", "tags": ["RAG", "入门"]},
-    },
-    {
-        "title": "向量数据库简介",
-        "source_uri": "docs/vector-db.md",
-        "text": (
-            "向量数据库是专为高维嵌入向量设计的存储系统。它们利用近似最近邻（ANN）搜索等技术实现快速相似度检索。"
-            "主流向量数据库包括 FAISS、Pinecone、Qdrant 和 Milvus。"
-            "这些系统是 RAG 应用的关键基础设施，直接影响检索质量与延迟。"
-            "选择向量数据库时应考虑：查询性能、可扩展性、过滤能力以及运维复杂度。"
-        ),
-        "metadata": {"author": "李四", "date": "2024-01-16", "tags": ["向量数据库", "基础设施"]},
-    },
-    {
-        "title": "文本嵌入技术",
-        "source_uri": "docs/embeddings.md",
-        "text": (
-            "嵌入（Embedding）是文本的稠密向量表示，能捕获语义含义。"
-            "它们由神经网络训练生成，将语义相似的文本在向量空间中放置得更近。"
-            "常见的嵌入模型包括 OpenAI 的 text-embedding-3、阿里云的 Qwen 嵌入模型，"
-            "以及开源模型如 sentence-transformers。嵌入质量直接影响 RAG 系统的检索准确率。"
-        ),
-        "metadata": {"author": "张三", "date": "2024-01-17", "tags": ["嵌入", "NLP"]},
-    },
-]
+
+def _load_chapter_document() -> dict:
+    """Loads the real markdown chapter used by this live test."""
+    with open(CHAPTER_FILE, "r", encoding="utf-8") as f:
+        text = f.read()
+
+    # Compute a repo-root-relative path for source_uri
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
+    source_uri = os.path.relpath(CHAPTER_FILE, repo_root)
+
+    return {
+        "title": "工程控制论（上册）前言",
+        "source_uri": source_uri,
+        "text": text,
+        "metadata": {
+            "book": "工程控制论（上册）",
+            "authors": ["钱学森", "宋健"],
+            "kind": "book-chapter",
+        },
+    }
+
 
 _QUERIES = [
-    "什么是 RAG？",
-    "向量数据库有哪些？",
-    "嵌入是怎么工作的？",
+    "工程控制论第三版保留和修订了哪些内容？",
+    "钱学森在序中如何看待技术革命和控制论的关系？",
+    "电子数字计算机为什么会推动自动控制技术革命？",
+    "What technical revolutions does Qian Xuesen discuss in the preface?",
+    "How does the author describe the relationship between cybernetics and systems engineering?",
+    "What role did electronic digital computers play in automation according to the text?",
 ]
 
 
@@ -202,10 +223,21 @@ _QUERIES = [
 def main() -> None:
     # -- Bootstrap ----------------------------------------------------------
     print("  PostgreSQL URI:", PG_URI)
+
+    # Load real DashScope embedding client from .env
+    env = _load_env()
+    kwargs = _dashscope_client_kwargs(env)
+    if kwargs is None:
+        sys.exit(
+            "DashScope API key not configured. "
+            f"Edit {ENV_PATH} to set DASHSCOPE_EMBEDDING_API_KEY."
+        )
+    embedding_client = OpenAIEmbeddingClient(dimensions=kwargs.pop("dimensions", 1024), **kwargs)
+    print(f"  Embedding: {embedding_client.model}  dim={embedding_client.dimensions}")
+
     sql_service = SqlDbService(PG_URI)
     store = SqlKnowledgeStore(sql_service)
-    chunker = FixedSizeChunker(chunk_size=200, chunk_overlap=30)
-    embedding_client = FakeEmbeddingClient(dimensions=16)
+    chunker = FixedSizeChunker(chunk_size=800, chunk_overlap=100)
 
     service = KnowledgeBaseService(
         embedding_client=embedding_client,
@@ -217,10 +249,10 @@ def main() -> None:
     # Step 1: Create knowledge bases
     # =======================================================================
     _h1("Step 1: 创建知识库")
-    _h2("创建 kb1 — 科技文档库")
+    _h2("创建 kb1 — 工程控制论文档库")
     kb1 = service.create_knowledge_base(
-        name="科技文档库",
-        description="存放 RAG、向量数据库等技术文档",
+        name="工程控制论",
+        description="存放《工程控制论》真实 markdown 文件内容",
         metadata={"owner": "dev-team", "env": "live-test"},
     )
     _dump_kb(kb1)
@@ -232,7 +264,7 @@ def main() -> None:
     )
     _dump_kb(kb2)
 
-    _pause("创建知识库完成", "list_knowledge_bases")
+    _pause("创建知识库完成", "从真实 markdown 文件 index_text")
 
     # =======================================================================
     # Step 2: List knowledge bases
@@ -242,15 +274,18 @@ def main() -> None:
     print(f"  共 {len(kbs)} 个知识库:")
     for kb in kbs:
         print(f"    - [{kb.id[-8:]}] {kb.name!r}  ({kb.description!r})")
-    _pause("list_knowledge_bases 完成", "index_text × 3")
+    _pause("list_knowledge_bases 完成", "index_text(chapter_000.md)")
 
     # =======================================================================
     # Step 3: Index documents
     # =======================================================================
-    _h1("Step 3: 索引文档")
+    _h1("Step 3: 从真实 markdown 文件索引文档")
     doc_ids: list[str] = []
-    for i, doc_meta in enumerate(_DOCUMENTS, 1):
-        _h2(f"索引文档 {i}/{len(_DOCUMENTS)}: {doc_meta['title']}")
+    documents = [_load_chapter_document()]
+    for i, doc_meta in enumerate(documents, 1):
+        _h2(f"索引文档 {i}/{len(documents)}: {doc_meta['title']}")
+        print(f"      source_uri       = {doc_meta['source_uri']}")
+        print(f"      text length      = {len(doc_meta['text'])} chars")
         doc = service.index_text(
             knowledge_base_id=kb1.id,
             text=doc_meta["text"],
@@ -286,7 +321,7 @@ def main() -> None:
         print(f"\n  --- 文档 [{doc.id[-8:]}] ---")
         _dump_doc(doc)
 
-    _pause("文档列表查看完成", "retrieve × 3")
+    _pause("文档列表查看完成", "retrieve × 6")
 
     # =======================================================================
     # Step 5: Search / retrieve
@@ -306,7 +341,11 @@ def main() -> None:
     print(f"  结果数: {len(empty_results)}  (应为 0)")
 
     _h2("retrieve_as_context — 格式化上下文")
-    context = service.retrieve_as_context(query="什么是 RAG？", knowledge_base_id=kb1.id, top_k=2)
+    context = service.retrieve_as_context(
+        query="工程控制论如何讨论技术革命？",
+        knowledge_base_id=kb1.id,
+        top_k=2,
+    )
     print(f"  上下文长度: {len(context)} chars")
     if context:
         print(f"  预览:\n{context[:300]}...")
@@ -343,7 +382,7 @@ def main() -> None:
 
     # Verify search no longer returns chunks from deleted doc
     _h2("检索验证: 删除文档的 chunks 不应再出现")
-    results_after = service.retrieve(query="RAG", knowledge_base_id=kb1.id, top_k=5)
+    results_after = service.retrieve(query="控制论", knowledge_base_id=kb1.id, top_k=5)
     deleted_chunks = [r for r in results_after if r.chunk.document_id == target_doc_id]
     if deleted_chunks:
         print(f"  ❌ BUG: 检索仍返回 {len(deleted_chunks)} 个已删除文档的 chunk!")
@@ -359,6 +398,7 @@ def main() -> None:
 
     _h2("删除前状态")
     print(f"  知识库数: {len(service.list_knowledge_bases())}  (应为 2)")
+    print(f"  kb1 文档数: {len(service.list_documents(kb1.id))}  (应为 0，文档已在 Step 6 删除)")
     print(f"  即将删除: kb2 ({kb2.name!r})")
 
     _pause("确认删除前", "执行 delete_knowledge_base")
