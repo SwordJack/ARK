@@ -1,11 +1,10 @@
 #! python3
-# -*- encoding: utf-8 -*-
-"""Knowledge-base tool factory.
-
-@File   :   tools.py
-@Created:   2026/08/01 20:42
-@Author :   SwordJack
-@Contact:   https://github.com/SwordJack/
+# -*- coding: utf-8 -*-
+"""
+@File   : knowledge.py
+@Created: 2026/08/02 00:06 (UTC+08:00)
+@Author : SwordJack
+@Contact: https://github.com/SwordJack/
 """
 
 # Here put the import lib.

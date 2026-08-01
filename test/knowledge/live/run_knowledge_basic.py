@@ -178,7 +178,7 @@ def run_provider(label: str, kwargs: Dict[str, Any]) -> None:
         name=f"AI Docs ({label})",
         description="E2E smoke-test knowledge base",
     )
-    print(f"  KB created: {kb.name} ({kb.id[:8]}…)  [dim={dims}]")
+    print(f"  KB created: {kb.name} ({kb.id[-8:]})  [dim={dims}]")
 
     # Index
     for doc in _DOCUMENTS:

@@ -116,7 +116,7 @@ isobase/knowledge/
 │   ├── __init__.py
 │   ├── base.py         # BaseChunker ABC
 │   ├── fixed.py        # Fixed-size chunker
-│   └── recursive.py    # Recursive character splitter
+│   └── recursive.py    # Recursive character splitter (Planned)
 ├── embeddings/
 │   ├── __init__.py
 │   ├── base.py         # BaseEmbeddingClient ABC
@@ -133,12 +133,10 @@ isobase/knowledge/
 ├── service.py          # KnowledgeBaseService
 ```
 
-**LLM-side tool integration (``isobase/llm/tools/knowledge/``):**
+**LLM-side tool integration (``isobase/llm/tools/knowledge.py``):**
 
 ```
-isobase/llm/tools/knowledge/
-├── __init__.py          # exports create_knowledge_search_tool
-└── tools.py             # factory wrapping isobase.knowledge into FunctionTool
+isobase/llm/tools/knowledge.py  # factory wrapping isobase.knowledge into FunctionTool
 ```
 
 ### 3.2 Design Principles
@@ -151,7 +149,7 @@ isobase/llm/tools/knowledge/
 
 **Integration points:**
 
-- `isobase/llm/tools/knowledge/` provides `FunctionTool` factories that consume `knowledge/`
+- `isobase/llm/tools/knowledge.py` provides `FunctionTool` factories that consume `knowledge/`
 - Embedding clients can use dedicated APIs (via `OpenAIEmbeddingClient`)
 - `SqlDbService` from `database/sql.py` manages connections for SQL-backed stores
 
@@ -759,9 +757,9 @@ class KnowledgeBaseService:
         return separator.join(str(result) for result in results)
 ```
 
-### 4.7 LLM Tool Integration (`isobase/llm/tools/knowledge/tools.py`)
+### 4.7 LLM Tool Integration (`isobase/llm/tools/knowledge.py`)
 
-The tool factory lives in `isobase/llm/tools/knowledge/` so that
+The tool factory lives in `isobase/llm/tools/knowledge.py` so that
 ``knowledge/`` never imports from ``llm/``.  The dependency flows
 only one way: ``llm/ → knowledge/``.
 
@@ -821,7 +819,7 @@ def create_knowledge_search_tool(
 3. ✅ `embeddings/base.py` + `embeddings/openai.py` - OpenAI-compatible client
 4. ✅ `stores/base.py` + `stores/memory.py` - In-memory store
 5. ✅ `service.py` - KnowledgeBaseService
-6. ✅ `tools.py` - LLM tool integration
+6. ✅ `isobase/llm/tools/knowledge.py` - LLM tool integration
 
 **Dependencies:**
 
@@ -1367,13 +1365,13 @@ def test_e2e_index_and_retrieve():
 
 ### Phase 1 (MVP) Success Criteria
 
-- [ ] All interfaces defined and documented
-- [ ] Fixed-size chunker passes unit tests
-- [ ] OpenAI-compatible embedding client works with Qwen v4
-- [ ] Memory store passes CRUD and search tests
-- [ ] End-to-end test: index 3 docs → retrieve correct chunk
-- [ ] KnowledgeSearchTool integrates with existing ToolSet
-- [ ] README with runnable examples
+- [x] All interfaces defined and documented
+- [x] Fixed-size chunker passes unit tests
+- [x] OpenAI-compatible embedding client works with Qwen v4
+- [x] Memory store passes CRUD and search tests
+- [x] End-to-end test: index 3 docs → retrieve correct chunk
+- [x] KnowledgeSearchTool integrates with existing ToolSet
+- [x] README with runnable examples
 
 ### Phase 2 (SQL) Success Criteria
 
