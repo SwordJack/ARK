@@ -87,9 +87,9 @@ embedding_client = OpenAIEmbeddingClient(
 ### 3. LLM Integration
 
 ```python
-from isobase.llm.providers.openai_chat import OpenAIChat
-from isobase.llm.tools.base import ToolSet
-from isobase.knowledge.tools import create_knowledge_search_tool
+from isobase.llm import OpenAIChat
+from isobase.llm.tools import ToolSet
+from isobase.llm.tools.knowledge import create_knowledge_search_tool
 
 # Create tool
 kb_tool = create_knowledge_search_tool(service, kb.id, top_k=3)

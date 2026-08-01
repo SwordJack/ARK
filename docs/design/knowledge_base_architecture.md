@@ -131,7 +131,14 @@ isobase/knowledge/
 │   ├── base.py         # BaseRetriever ABC
 │   └── dense.py        # Dense retriever (cosine similarity)
 ├── service.py          # KnowledgeBaseService
-└── tools.py            # LLM tool definitions
+```
+
+**LLM-side tool integration (``isobase/llm/tools/knowledge/``):**
+
+```
+isobase/llm/tools/knowledge/
+├── __init__.py          # exports create_knowledge_search_tool
+└── tools.py             # factory wrapping isobase.knowledge into FunctionTool
 ```
 
 ### 3.2 Design Principles
@@ -144,8 +151,8 @@ isobase/knowledge/
 
 **Integration points:**
 
-- `knowledge/tools.py` exports `FunctionTool` instances compatible with `llm/tools/base.py:ToolSet`
-- Embedding clients can wrap existing `BaseLLMClient` instances (for providers supporting embeddings) or use dedicated APIs
+- `isobase/llm/tools/knowledge/` provides `FunctionTool` factories that consume `knowledge/`
+- Embedding clients can use dedicated APIs (via `OpenAIEmbeddingClient`)
 - `SqlDbService` from `database/sql.py` manages connections for SQL-backed stores
 
 ## 4. Core Interfaces
@@ -752,12 +759,15 @@ class KnowledgeBaseService:
         return separator.join(str(result) for result in results)
 ```
 
-### 4.7 LLM Tool Integration (`tools.py`)
+### 4.7 LLM Tool Integration (`isobase/llm/tools/knowledge/tools.py`)
+
+The tool factory lives in `isobase/llm/tools/knowledge/` so that
+``knowledge/`` never imports from ``llm/``.  The dependency flows
+only one way: ``llm/ → knowledge/``.
 
 ```python
-from typing import Optional
 from isobase.llm.tools.base import FunctionTool
-from .service import KnowledgeBaseService
+from isobase.knowledge import KnowledgeBaseService
 
 
 def create_knowledge_search_tool(
@@ -776,37 +786,17 @@ def create_knowledge_search_tool(
         A FunctionTool that can be added to a ToolSet.
 
     Example usage:
-        kb_tool = create_knowledge_search_tool(service, kb_id="my-kb")
+        from isobase.llm.tools.knowledge import create_knowledge_search_tool
+
+        kb_tool = create_knowledge_search_tool(service, kb.id, top_k=3)
         toolset = ToolSet()
         toolset.add_tool(kb_tool)
-
-        # In LLM loop
-        response = client.generate(
-            messages=[{"role": "user", "content": "What is RAG?"}],
-            tools=toolset.to_openai_schema()
-        )
     """
 
     def search_knowledge_base(query: str, limit: Optional[int] = None) -> str:
-        """Searches indexed private knowledge for relevant context.
-
-        Use this tool when the user asks about uploaded documents, project notes,
-        or indexed factual context that may not be in your training data.
-
-        Args:
-            query: Concise search query describing the information needed.
-            limit: Maximum number of results to return (default: 5).
-
-        Returns:
-            Formatted search results with source attribution.
-        """
         k = limit if limit is not None else top_k
         context = service.retrieve_as_context(query, knowledge_base_id, top_k=k)
-
-        if not context:
-            return "No relevant knowledge found for this query."
-
-        return context
+        return context or "No relevant knowledge found for this query."
 
     return FunctionTool(
         mapped_callable=search_knowledge_base,
@@ -1086,16 +1076,12 @@ for result in results:
 ### 7.2 LLM Integration
 
 ```python
-from isobase.llm.providers.openai_chat import OpenAIChat
-from isobase.llm.tools.base import ToolSet
-from isobase.knowledge.tools import create_knowledge_search_tool
+from isobase.llm import OpenAIChat
+from isobase.llm.tools import ToolSet
+from isobase.llm.tools.knowledge import create_knowledge_search_tool
 
 # Create knowledge search tool
-kb_tool = create_knowledge_search_tool(
-    service=service,
-    knowledge_base_id=kb.id,
-    top_k=3,
-)
+kb_tool = create_knowledge_search_tool(service, kb.id, top_k=3)
 
 # Add to toolset
 toolset = ToolSet()

@@ -11,7 +11,6 @@ Key components:
 - chunking: Document splitting strategies
 - stores: Storage backends (memory, SQL)
 - service: High-level orchestration (KnowledgeBaseService)
-- tools: LLM tool integration (FunctionTool wrappers)
 
 @File   :   __init__.py
 @Created:   2026/07/29 00:16

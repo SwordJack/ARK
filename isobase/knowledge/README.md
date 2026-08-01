@@ -75,25 +75,23 @@ for result in results:
 
 ### Option 1: Tool-based (Recommended)
 
-Let the LLM automatically decide when to search knowledge:
+Let the LLM automatically decide when to search knowledge.
+Use the convenience factory shipped in `isobase.llm.tools.knowledge`:
 
 ```python
-from isobase.llm.providers.openai_chat import OpenAIChat
-from isobase.llm.tools.base import ToolSet
-from isobase.knowledge.tools import create_knowledge_search_tool
+from isobase.llm import OpenAIChat
+from isobase.llm.tools import ToolSet
+from isobase.llm.tools.knowledge import create_knowledge_search_tool
 
 # Create knowledge search tool
-kb_tool = create_knowledge_search_tool(
-    service=service,
-    knowledge_base_id=kb.id,
-    top_k=3,
-)
+kb_tool = create_knowledge_search_tool(service, kb.id, top_k=3)
 
 # Add to toolset
 toolset = ToolSet()
 toolset.add_tool(kb_tool)
 
 # Initialize LLM client
+from isobase.llm import OpenAIChat
 llm = OpenAIChat(api_key="your_openai_key")
 
 # Generate with tool access
@@ -205,6 +203,10 @@ client = OpenAIEmbeddingClient(
 ## Architecture
 
 ```
+isobase/llm/tools/knowledge/
+│   ├── __init__.py      # create_knowledge_search_tool factory
+│   └── tools.py         # Tool implementation
+
 isobase/knowledge/
 ├── entities.py          # Core DTOs (KnowledgeBase, Document, Chunk, RetrievalResult)
 ├── embeddings/
@@ -226,11 +228,11 @@ isobase/knowledge/
 
 ### Knowledge Base
 
-A logical collection of indexed documents with configuration.  The knowledge
+A logical collection of indexed documents with configuration. The knowledge
 base entity is the **single source of truth** for chunking parameters:
-``index_text()`` reads the KB's ``chunk_size`` / ``chunk_overlap`` and passes
+`index_text()` reads the KB's `chunk_size` / `chunk_overlap` and passes
 them to the chunker, so every document in a given KB is split with the same
-parameters.  Changing the chunker instance on the service **does not** change
+parameters. Changing the chunker instance on the service **does not** change
 the behaviour of already-created KBs.
 
 - Embedding model identifier
@@ -264,9 +266,9 @@ Search result containing:
 ## Chunking Strategies
 
 Chunking parameters are owned by the **knowledge base**, not by the chunker
-instance.  When you create a knowledge base the current chunker's defaults are
-snapped into the entity; every subsequent ``index_text()`` call reads the
-KB's stored values and passes them to the chunker.  This means you can manage
+instance. When you create a knowledge base the current chunker's defaults are
+snapped into the entity; every subsequent `index_text()` call reads the
+KB's stored values and passes them to the chunker. This means you can manage
 multiple knowledge bases with different chunk sizes through a single service
 instance — the KB entity is the single source of truth.
 
@@ -301,7 +303,7 @@ chunks = chunker.chunk("Long text content...",
 
 ### Future Strategies
 
-The ``BaseChunker.chunk()`` signature accepts ``**kwargs`` so that
+The `BaseChunker.chunk()` signature accepts `**kwargs` so that
 structure-aware chunkers can receive additional parameters in the future:
 
 ```python
@@ -312,7 +314,7 @@ chunker.chunk(text,
 ```
 
 When a semantic chunker produces chunks the extra context (e.g. heading
-breadcrumbs) can be stored in ``KnowledgeChunk.metadata`` under the
+breadcrumbs) can be stored in `KnowledgeChunk.metadata` under the
 conventional keys documented on the entity.
 
 ## Storage Backends

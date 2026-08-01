@@ -67,19 +67,16 @@ for result in results:
 
 ### 方式 1：基于工具（推荐）
 
-让 LLM 自动决定何时搜索知识：
+让 LLM 自动决定何时搜索知识。
+使用 `isobase.llm.tools.knowledge` 中提供的便捷工厂函数：
 
 ```python
-from isobase.llm.providers.openai_chat import OpenAIChat
-from isobase.llm.tools.base import ToolSet
-from isobase.knowledge.tools import create_knowledge_search_tool
+from isobase.llm import OpenAIChat
+from isobase.llm.tools import ToolSet
+from isobase.llm.tools.knowledge import create_knowledge_search_tool
 
 # 创建知识搜索工具
-kb_tool = create_knowledge_search_tool(
-    service=service,
-    knowledge_base_id=kb.id,
-    top_k=3,
-)
+kb_tool = create_knowledge_search_tool(service, kb.id, top_k=3)
 
 # 添加到工具集
 toolset = ToolSet()
@@ -99,14 +96,14 @@ response = llm.generate(
 # 处理工具调用
 if response.tool_calls:
     tool_results, _ = toolset.execute_tool_calls(response.tool_calls)
-    
+
     # 将工具结果返回给 LLM
     messages = [
         {"role": "user", "content": "RAG 是什么以及如何工作？"},
         {"role": "assistant", "tool_calls": response.tool_calls},
         {"role": "tool", "content": str(tool_results[0])}
     ]
-    
+
     final_response = llm.generate(messages=messages)
     print(final_response.content)
 ```
@@ -152,6 +149,7 @@ client = OpenAIEmbeddingClient(
 ```
 
 **特性：**
+
 - 上下文: 32K tokens
 - 多语言: 100+ 种语言
 - 性能: MTEB 68.36 (英文), 70.14 (中文) @ 1024 维
@@ -171,6 +169,7 @@ client = OpenAIEmbeddingClient(
 ```
 
 **特性：**
+
 - 中文原生优化
 - 批处理: 最多 25 个文本/请求
 - 模型: v3, v4
@@ -188,12 +187,17 @@ client = OpenAIEmbeddingClient(
 ```
 
 **模型：**
+
 - `text-embedding-3-small`: 1536 维，更快，更便宜
 - `text-embedding-3-large`: 3072 维，更高质量
 
 ## 架构
 
 ```
+isobase/llm/tools/knowledge/
+│   ├── __init__.py      # create_knowledge_search_tool 工厂函数
+│   └── tools.py         # 工具实现
+
 isobase/knowledge/
 ├── entities.py          # 核心 DTO（KnowledgeBase, Document, Chunk, RetrievalResult）
 ├── embeddings/
@@ -216,7 +220,7 @@ isobase/knowledge/
 ### 知识库
 
 带配置的索引文档逻辑集合。知识库实体是**分块参数的唯一真相来源**：
-``index_text()`` 会读取 KB 的 ``chunk_size`` / ``chunk_overlap`` 并传给 chunker，
+`index_text()` 会读取 KB 的 `chunk_size` / `chunk_overlap` 并传给 chunker，
 因此同一个 KB 内的所有文档始终使用相同参数分块。更换 service 上的 chunker
 实例**不会影响**已创建的 KB 的行为。
 
@@ -227,6 +231,7 @@ isobase/knowledge/
 ### 文档
 
 包含以下内容的顶级索引单元：
+
 - 原始内容
 - 标题和来源 URI
 - 元数据（作者、日期、标签）
@@ -234,6 +239,7 @@ isobase/knowledge/
 ### 块
 
 检索单元：
+
 - 从父文档拆分
 - 作为向量嵌入
 - 通过相似性搜索检索
@@ -241,13 +247,14 @@ isobase/knowledge/
 ### 检索结果
 
 包含以下内容的搜索结果：
+
 - 块内容
 - 相似度分数
 - 父文档引用
 
 ## 分块策略
 
-分块参数由**知识库实体**而非 chunker 实例拥有。创建知识库时，chunker 的当前默认值会被写入 KB 实体；后续每次调用 ``index_text()`` 都会从 KB 实体读取存储的参数并传递给 chunker。这使得 **同一个 service 实例可以管理多份配置不同的知识库** ——每个 KB 使用自己的参数分块，chunker 实例只提供默认值。
+分块参数由**知识库实体**而非 chunker 实例拥有。创建知识库时，chunker 的当前默认值会被写入 KB 实体；后续每次调用 `index_text()` 都会从 KB 实体读取存储的参数并传递给 chunker。这使得 **同一个 service 实例可以管理多份配置不同的知识库** ——每个 KB 使用自己的参数分块，chunker 实例只提供默认值。
 
 ### 固定大小分块器
 
@@ -268,17 +275,19 @@ chunks = chunker.chunk("长文本内容...",
 ```
 
 **优点：**
+
 - 简单可预测
 - 快速处理
 - 无依赖
 
 **缺点：**
+
 - 可能在句子中间分割
 - 不尊重文档结构
 
 ### 未来策略
 
-``BaseChunker.chunk()`` 签名保留了 ``**kwargs``，为未来的结构感知分块器预留通道：
+`BaseChunker.chunk()` 签名保留了 `**kwargs`，为未来的结构感知分块器预留通道：
 
 ```python
 # 计划中 — 尚未实现
@@ -287,7 +296,7 @@ chunker.chunk(text,
               heading_path=["第 1 章", "1.1 概述"])
 ```
 
-语义分块器产生的额外上下文（如标题路径）可以存入 ``KnowledgeChunk.metadata``，具体键名约定见实体定义。
+语义分块器产生的额外上下文（如标题路径）可以存入 `KnowledgeChunk.metadata`，具体键名约定见实体定义。
 
 ## 存储后端
 
@@ -302,11 +311,13 @@ store = MemoryKnowledgeStore()
 ```
 
 **优点：**
+
 - 零设置
 - 快速
 - 非常适合测试
 
 **缺点：**
+
 - 重启后数据丢失
 - 非线程安全
 - 仅限于可用 RAM
@@ -326,6 +337,7 @@ store = SqlKnowledgeStore(db_service)
 ```
 
 **特性：**
+
 - 持久存储
 - SQLite 和 PostgreSQL 支持
 - 与现有 `database/sql.py` 集成
@@ -333,6 +345,7 @@ store = SqlKnowledgeStore(db_service)
 ## 路线图
 
 ### Phase 1: MVP（当前）
+
 - ✅ 核心接口
 - ✅ 固定大小分块器
 - ✅ OpenAI 兼容嵌入客户端
@@ -341,23 +354,27 @@ store = SqlKnowledgeStore(db_service)
 - ✅ LLM 工具集成
 
 ### Phase 2: SQL 持久化
+
 - [ ] SQL 后端存储
 - [ ] 模式迁移
 - [ ] 向量存储（初始为 JSON）
 
 ### Phase 3: 增强检索
+
 - [ ] 混合检索（稠密 + 稀疏）
 - [ ] BM25 稀疏检索器
 - [ ] RRF（倒数排名融合）
 - [ ] 重排序器接口
 
 ### Phase 4: 文档解析器
+
 - [ ] 文本解析器
 - [ ] Markdown 解析器
 - [ ] PDF 提取
 - [ ] 网页提取
 
 ### Phase 5: 高级功能
+
 - [ ] 异步/批量索引
 - [ ] 增量更新
 - [ ] 多知识库搜索
