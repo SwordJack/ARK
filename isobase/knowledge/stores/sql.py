@@ -10,13 +10,12 @@
 
 import json
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, delete, select
-from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, select
+from sqlalchemy.orm import DeclarativeBase
 
-from isobase.database.sql import SqlDbService
+from isobase.database.sql import SqlDbModelMixin, SqlDbService
 
 from ..entities import (
     KnowledgeBase,
@@ -29,12 +28,18 @@ from .memory import cosine_similarity
 
 
 class KnowledgeSqlBase(DeclarativeBase):
-    """Declarative base for knowledge SQL tables."""
+    """Declarative base for knowledge SQL models.
+
+    SQLAlchemy forbids inheriting ``DeclarativeBase`` directly; every
+    concrete model must inherit from a user-defined subclass that serves
+    as the shared metadata registry.  ``create_all(Base)`` creates all
+    knowledge tables in one call.
+    """
 
     pass
 
 
-class KnowledgeBaseModel(KnowledgeSqlBase):
+class KnowledgeBaseModel(SqlDbModelMixin, KnowledgeSqlBase):
     """SQL model for knowledge bases."""
 
     __tablename__ = "knowledge_bases"
@@ -51,7 +56,7 @@ class KnowledgeBaseModel(KnowledgeSqlBase):
     updated_time = Column(DateTime(timezone=True), nullable=True)
 
 
-class KnowledgeDocumentModel(KnowledgeSqlBase):
+class KnowledgeDocumentModel(SqlDbModelMixin, KnowledgeSqlBase):
     """SQL model for knowledge documents."""
 
     __tablename__ = "knowledge_documents"
@@ -67,7 +72,7 @@ class KnowledgeDocumentModel(KnowledgeSqlBase):
     created_time = Column(DateTime(timezone=True), nullable=True)
 
 
-class KnowledgeChunkModel(KnowledgeSqlBase):
+class KnowledgeChunkModel(SqlDbModelMixin, KnowledgeSqlBase):
     """SQL model for knowledge chunks."""
 
     __tablename__ = "knowledge_chunks"
@@ -83,7 +88,7 @@ class KnowledgeChunkModel(KnowledgeSqlBase):
     metadata_json = Column("metadata", Text, nullable=False, default="{}")
 
 
-class KnowledgeEmbeddingModel(KnowledgeSqlBase):
+class KnowledgeEmbeddingModel(SqlDbModelMixin, KnowledgeSqlBase):
     """SQL model for chunk embeddings."""
 
     __tablename__ = "knowledge_embeddings"
@@ -97,8 +102,9 @@ class KnowledgeEmbeddingModel(KnowledgeSqlBase):
 class SqlKnowledgeStore(BaseKnowledgeStore):
     """SQL-backed knowledge store using JSON text embeddings.
 
-    This implementation is intended for durable MVP storage. It stores vectors
-    as JSON text and computes cosine similarity in Python.
+    This implementation stores vectors as JSON text and computes cosine
+    similarity in Python.  CRUD operations delegate to
+    :class:`SqlDbModelMixin` to stay consistent with the rest of IsoBase.
     """
 
     def __init__(self, sql_service: Optional[SqlDbService] = None) -> None:
@@ -112,6 +118,18 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
             sql_service = SqlDbService("sqlite:///:memory:")
         self.sql_service = sql_service
         self.sql_service.create_all(KnowledgeSqlBase)
+
+        # Wire the service to each model class so that SqlDbModelMixin
+        # methods (insert / find_by_id / delete_many / …) operate on
+        # the same engine.
+        KnowledgeBaseModel.use_sql_service(sql_service)
+        KnowledgeDocumentModel.use_sql_service(sql_service)
+        KnowledgeChunkModel.use_sql_service(sql_service)
+        KnowledgeEmbeddingModel.use_sql_service(sql_service)
+
+    # ------------------------------------------------------------------
+    # Knowledge base CRUD
+    # ------------------------------------------------------------------
 
     def create_knowledge_base(self, kb: KnowledgeBase) -> KnowledgeBase:
         """Creates a new knowledge base.
@@ -128,17 +146,12 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
         if not kb.id:
             kb.id = str(uuid.uuid4())
 
-        with self.sql_service.create_session() as session:
-            if session.get(KnowledgeBaseModel, kb.id) is not None:
-                raise ValueError(f"Knowledge base {kb.id} already exists")
+        if KnowledgeBaseModel.find_by_id(kb.id) is not None:
+            raise ValueError(f"Knowledge base {kb.id} already exists")
 
-            now = datetime.now(timezone.utc)
-            kb.created_time = now
-            kb.updated_time = now
-
-            session.add(self._kb_to_model(kb))
-            session.commit()
-        return kb
+        model = self._kb_to_model(kb)
+        model.insert()
+        return self._model_to_kb(model)
 
     def get_knowledge_base(self, kb_id: str) -> KnowledgeBase:
         """Retrieves a knowledge base by ID.
@@ -152,11 +165,10 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
         Raises:
             KeyError: If knowledge base not found.
         """
-        with self.sql_service.create_session() as session:
-            model = session.get(KnowledgeBaseModel, kb_id)
-            if model is None:
-                raise KeyError(f"Knowledge base {kb_id} not found")
-            return self._model_to_kb(model)
+        model = KnowledgeBaseModel.find_by_id(kb_id)
+        if model is None:
+            raise KeyError(f"Knowledge base {kb_id} not found")
+        return self._model_to_kb(model)
 
     def list_knowledge_bases(self) -> list[KnowledgeBase]:
         """Lists all knowledge bases.
@@ -164,11 +176,8 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
         Returns:
             List of all knowledge bases. May be empty.
         """
-        with self.sql_service.create_session() as session:
-            models = session.execute(
-                select(KnowledgeBaseModel)
-            ).scalars().all()
-            return [self._model_to_kb(m) for m in models]
+        models = KnowledgeBaseModel.find_many()
+        return [self._model_to_kb(m) for m in models]
 
     def delete_knowledge_base(self, kb_id: str) -> None:
         """Deletes a knowledge base and all its documents/chunks/embeddings.
@@ -179,35 +188,38 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
         Raises:
             KeyError: If knowledge base not found.
         """
-        with self.sql_service.create_session() as session:
-            if session.get(KnowledgeBaseModel, kb_id) is None:
-                raise KeyError(f"Knowledge base {kb_id} not found")
+        if KnowledgeBaseModel.find_by_id(kb_id) is None:
+            raise KeyError(f"Knowledge base {kb_id} not found")
 
-            # Cascade-delete: embeddings -> chunks -> documents -> kb
-            chunk_rows = session.execute(
-                select(KnowledgeChunkModel.id)
-                .where(KnowledgeChunkModel.knowledge_base_id == kb_id)
-            ).all()
-            chunk_ids = [row[0] for row in chunk_rows]
+        def _cascade(session: Any) -> None:
+            chunks = KnowledgeChunkModel.find_many(
+                KnowledgeChunkModel.knowledge_base_id == kb_id,
+                session=session,
+            )
+            chunk_ids = [c.id for c in chunks]
             if chunk_ids:
-                session.execute(
-                    delete(KnowledgeEmbeddingModel)
-                    .where(KnowledgeEmbeddingModel.chunk_id.in_(chunk_ids))
+                KnowledgeEmbeddingModel.delete_many(
+                    KnowledgeEmbeddingModel.chunk_id.in_(chunk_ids),
+                    session=session,
                 )
-                session.execute(
-                    delete(KnowledgeChunkModel)
-                    .where(KnowledgeChunkModel.id.in_(chunk_ids))
+                KnowledgeChunkModel.delete_many(
+                    KnowledgeChunkModel.id.in_(chunk_ids),
+                    session=session,
                 )
+            KnowledgeDocumentModel.delete_many(
+                KnowledgeDocumentModel.knowledge_base_id == kb_id,
+                session=session,
+            )
+            # delete_many above already removed the document rows; now
+            # delete the KB row itself via the instance method.
+            kb_model = KnowledgeBaseModel.find_by_id(kb_id, session=session)
+            kb_model.delete(session=session)
 
-            session.execute(
-                delete(KnowledgeDocumentModel)
-                .where(KnowledgeDocumentModel.knowledge_base_id == kb_id)
-            )
-            session.execute(
-                delete(KnowledgeBaseModel)
-                .where(KnowledgeBaseModel.id == kb_id)
-            )
-            session.commit()
+        KnowledgeBaseModel.execute_transaction(_cascade)
+
+    # ------------------------------------------------------------------
+    # Document CRUD
+    # ------------------------------------------------------------------
 
     def add_document(self, doc: KnowledgeDocument) -> KnowledgeDocument:
         """Stores a document.
@@ -221,19 +233,15 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
         Raises:
             KeyError: If the parent knowledge base does not exist.
         """
-        with self.sql_service.create_session() as session:
-            if session.get(KnowledgeBaseModel, doc.knowledge_base_id) is None:
-                raise KeyError(
-                    f"Knowledge base {doc.knowledge_base_id} not found"
-                )
+        if KnowledgeBaseModel.find_by_id(doc.knowledge_base_id) is None:
+            raise KeyError(f"Knowledge base {doc.knowledge_base_id} not found")
 
-            if not doc.id:
-                doc.id = str(uuid.uuid4())
+        if not doc.id:
+            doc.id = str(uuid.uuid4())
 
-            doc.created_time = datetime.now(timezone.utc)
-            session.add(self._doc_to_model(doc))
-            session.commit()
-        return doc
+        model = self._doc_to_model(doc)
+        model.insert()
+        return self._model_to_doc(model)
 
     def get_document(self, doc_id: str) -> KnowledgeDocument:
         """Retrieves a document by ID.
@@ -247,11 +255,10 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
         Raises:
             KeyError: If document not found.
         """
-        with self.sql_service.create_session() as session:
-            model = session.get(KnowledgeDocumentModel, doc_id)
-            if model is None:
-                raise KeyError(f"Document {doc_id} not found")
-            return self._model_to_doc(model)
+        model = KnowledgeDocumentModel.find_by_id(doc_id)
+        if model is None:
+            raise KeyError(f"Document {doc_id} not found")
+        return self._model_to_doc(model)
 
     def list_documents(self, kb_id: str) -> list[KnowledgeDocument]:
         """Lists all documents in a knowledge base.
@@ -265,14 +272,12 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
         Raises:
             KeyError: If knowledge base not found.
         """
-        with self.sql_service.create_session() as session:
-            if session.get(KnowledgeBaseModel, kb_id) is None:
-                raise KeyError(f"Knowledge base {kb_id} not found")
-            models = session.execute(
-                select(KnowledgeDocumentModel)
-                .where(KnowledgeDocumentModel.knowledge_base_id == kb_id)
-            ).scalars().all()
-            return [self._model_to_doc(m) for m in models]
+        if KnowledgeBaseModel.find_by_id(kb_id) is None:
+            raise KeyError(f"Knowledge base {kb_id} not found")
+        models = KnowledgeDocumentModel.find_many(
+            KnowledgeDocumentModel.knowledge_base_id == kb_id,
+        )
+        return [self._model_to_doc(m) for m in models]
 
     def delete_document(self, doc_id: str) -> None:
         """Deletes a document and all its chunks/embeddings.
@@ -283,35 +288,37 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
         Raises:
             KeyError: If document not found.
         """
-        with self.sql_service.create_session() as session:
-            if session.get(KnowledgeDocumentModel, doc_id) is None:
-                raise KeyError(f"Document {doc_id} not found")
+        if KnowledgeDocumentModel.find_by_id(doc_id) is None:
+            raise KeyError(f"Document {doc_id} not found")
 
-            chunk_rows = session.execute(
-                select(KnowledgeChunkModel.id)
-                .where(KnowledgeChunkModel.document_id == doc_id)
-            ).all()
-            chunk_ids = [row[0] for row in chunk_rows]
-            if chunk_ids:
-                session.execute(
-                    delete(KnowledgeEmbeddingModel)
-                    .where(KnowledgeEmbeddingModel.chunk_id.in_(chunk_ids))
-                )
-                session.execute(
-                    delete(KnowledgeChunkModel)
-                    .where(KnowledgeChunkModel.id.in_(chunk_ids))
-                )
-
-            session.execute(
-                delete(KnowledgeDocumentModel)
-                .where(KnowledgeDocumentModel.id == doc_id)
+        def _cascade(session: Any) -> None:
+            chunks = KnowledgeChunkModel.find_many(
+                KnowledgeChunkModel.document_id == doc_id,
+                session=session,
             )
-            session.commit()
+            chunk_ids = [c.id for c in chunks]
+            if chunk_ids:
+                KnowledgeEmbeddingModel.delete_many(
+                    KnowledgeEmbeddingModel.chunk_id.in_(chunk_ids),
+                    session=session,
+                )
+                KnowledgeChunkModel.delete_many(
+                    KnowledgeChunkModel.id.in_(chunk_ids),
+                    session=session,
+                )
+            doc_model = KnowledgeDocumentModel.find_by_id(doc_id, session=session)
+            doc_model.delete(session=session)
+
+        KnowledgeDocumentModel.execute_transaction(_cascade)
+
+    # ------------------------------------------------------------------
+    # Chunks & search
+    # ------------------------------------------------------------------
 
     def add_chunks(
         self,
         chunks: List[KnowledgeChunk],
-        embeddings: List[List[float]]
+        embeddings: List[List[float]],
     ) -> None:
         """Stores chunks and their embeddings.
 
@@ -320,7 +327,7 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
             embeddings: Corresponding embedding vectors.
 
         Raises:
-            ValueError: If chunk count doesn't match embedding count.
+            ValueError: If len(chunks) != len(embeddings).
             KeyError: If parent knowledge base does not exist.
         """
         if len(chunks) != len(embeddings):
@@ -329,31 +336,39 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
                 f"embedding count ({len(embeddings)})"
             )
 
-        with self.sql_service.create_session() as session:
-            for chunk, embedding in zip(chunks, embeddings):
-                if session.get(KnowledgeBaseModel, chunk.knowledge_base_id) is None:
-                    raise KeyError(
-                        f"Knowledge base {chunk.knowledge_base_id} not found"
-                    )
+        # Verify KB existence once before entering the transaction.
+        if chunks:
+            kb_id = chunks[0].knowledge_base_id
+            if KnowledgeBaseModel.find_by_id(kb_id) is None:
+                raise KeyError(f"Knowledge base {kb_id} not found")
 
+        def _bulk_insert(session: Any) -> None:
+            for chunk, embedding in zip(chunks, embeddings):
                 if not chunk.id:
                     chunk.id = str(uuid.uuid4())
 
-                session.add(self._chunk_to_model(chunk))
-                session.add(KnowledgeEmbeddingModel(
+                chunk_model = self._chunk_to_model(chunk)
+                chunk_model.insert(session=session)
+
+                embed_model = KnowledgeEmbeddingModel(
                     chunk_id=chunk.id,
                     embedding=json.dumps(embedding),
-                ))
-            session.commit()
-        return
+                )
+                embed_model.insert(session=session)
+
+        # Use any model class — they all share the same SqlDbService.
+        KnowledgeBaseModel.execute_transaction(_bulk_insert)
 
     def search(
         self,
         kb_id: str,
         query_embedding: List[float],
-        top_k: int = 5
+        top_k: int = 5,
     ) -> List[RetrievalResult]:
         """Searches for similar chunks by vector similarity.
+
+        The search still uses a raw SQLAlchemy JOIN because
+        :class:`SqlDbModelMixin` does not expose multi-entity queries.
 
         Args:
             kb_id: Knowledge base ID to search within.
@@ -361,7 +376,7 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
             top_k: Maximum number of results.
 
         Returns:
-            List of retrieval results with scores and document references.
+            List of retrieval results, sorted by score descending.
             Empty list if knowledge base is empty or has no chunks.
         """
         with self.sql_service.create_session() as session:
@@ -379,9 +394,7 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
                 embedding = json.loads(embedding_model.embedding)
                 score = cosine_similarity(query_embedding, embedding)
                 chunk = self._model_to_chunk(chunk_model)
-                doc_model = session.get(
-                    KnowledgeDocumentModel, chunk.document_id
-                )
+                doc_model = session.get(KnowledgeDocumentModel, chunk.document_id)
                 doc = None
                 if doc_model is not None:
                     doc = self._model_to_doc(doc_model)
@@ -394,6 +407,13 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
 
+    # ------------------------------------------------------------------
+    # DTO ↔ model converters
+    # ------------------------------------------------------------------
+    # created_time / updated_time are intentionally *not* copied into
+    # newly constructed model instances — :meth:`SqlDbModelMixin.insert`
+    # populates them automatically.
+
     def _kb_to_model(self, kb: KnowledgeBase) -> KnowledgeBaseModel:
         """Converts a knowledge base DTO to a SQL model."""
         return KnowledgeBaseModel(
@@ -405,8 +425,6 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
             chunk_size=kb.chunk_size,
             chunk_overlap=kb.chunk_overlap,
             metadata_json=self._dump_metadata(kb.metadata),
-            created_time=kb.created_time,
-            updated_time=kb.updated_time,
         )
 
     def _model_to_kb(self, model: KnowledgeBaseModel) -> KnowledgeBase:
@@ -433,7 +451,6 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
             source_uri=doc.source_uri,
             content=doc.content,
             metadata_json=self._dump_metadata(doc.metadata),
-            created_time=doc.created_time,
         )
 
     def _model_to_doc(self, model: KnowledgeDocumentModel) -> KnowledgeDocument:
@@ -472,10 +489,10 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
             metadata=self._load_metadata(model.metadata_json),
         )
 
-    def _dump_metadata(self, metadata: Dict[str, Any]) -> str:
+    def _dump_metadata(self, metadata: Any) -> str:
         """Serializes metadata to JSON text."""
         return json.dumps(metadata)
 
-    def _load_metadata(self, metadata_json: str) -> Dict[str, Any]:
+    def _load_metadata(self, metadata_json: str) -> Any:
         """Deserializes metadata JSON text."""
         return json.loads(metadata_json or "{}")
