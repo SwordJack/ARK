@@ -1,33 +1,31 @@
 #! python3
 # -*- encoding: utf-8 -*-
-"""Live smoke test covering the full knowledge-base lifecycle with PostgreSQL.
+"""Live smoke test covering the full knowledge-base lifecycle with MongoDB.
 
 This script is intentionally **not** collected by pytest (it doesn't start
 with ``test_``) and never runs in CI.
 
 It reads DashScope credentials from the same ``.env`` file used by
-``run_knowledge_basic.py`` and uses the real embedding API.  The only other
-external dependency is a running PostgreSQL instance.
+``run_lifecycle.py`` and uses the real embedding API.  The only other
+external dependency is a running MongoDB instance.
 
 Usage
 -----
-1. Make sure PostgreSQL is running and the target database exists::
-
-       createdb isobase
+1. Make sure MongoDB is running on localhost:27017.
 
 2. Make sure the DashScope API key is configured in the ``.env`` file
    sitting next to this script (see ``.env.example``).
 
 3. Run from the repo root::
 
-       python -m test.knowledge.live.run_lifecycle
+       python -m test.knowledge.live.run_lifecycle_mongo
 
 The script pauses after every major step so you can inspect the database
-contents with an external tool (psql, DBeaver, etc.).  Press Enter to
+contents with an external tool (mongosh, Compass, etc.).  Press Enter to
 continue or Ctrl-C to abort.
 
-@File   :   run_lifecycle.py
-@Created:   2026/08/02 03:16 (UTC+08:00)
+@File   :   run_lifecycle_mongo.py
+@Created:   2026/08/03 04:19 (UTC+08:00)
 @Author :   SwordJack
 @Contact:   https://github.com/SwordJack/
 """
@@ -38,7 +36,7 @@ import os
 import sys
 from typing import Any, Dict, List, Optional
 
-from isobase.database.sql import SqlDbService
+from isobase.database.mongo import MongoDbService
 from isobase.knowledge import KnowledgeBaseService
 from isobase.knowledge.embeddings import OpenAIEmbeddingClient
 from isobase.knowledge.chunking import FixedSizeChunker
@@ -48,12 +46,13 @@ from isobase.knowledge.entities import (
     KnowledgeChunk,
     RetrievalResult,
 )
-from isobase.knowledge.stores import SqlKnowledgeStore
+from isobase.knowledge.stores import MongoKnowledgeStore
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-PG_URI = "postgresql://postgres:postgres@localhost:5432/isobase"
+MONGO_URI = "mongodb://localhost:27017"
+MONGO_DB = "isobase"
 
 HERE = os.path.dirname(__file__)
 DATA_DIR = os.path.join(HERE, "data")
@@ -62,7 +61,7 @@ ENV_PATH = os.path.join(HERE, ".env")
 
 
 # ---------------------------------------------------------------------------
-# Helpers — .env loading (same convention as run_knowledge_basic.py)
+# Helpers — .env loading (same convention as run_lifecycle.py)
 # ---------------------------------------------------------------------------
 
 
@@ -103,7 +102,10 @@ def _dashscope_client_kwargs(env: Dict[str, str]) -> Optional[Dict[str, Any]]:
 
     kwargs: Dict[str, Any] = {
         "api_key": api_key,
-        "base_url": env.get(f"{prefix}_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+        "base_url": env.get(
+            f"{prefix}_BASE_URL",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        ),
         "model": env.get(f"{prefix}_MODEL", "text-embedding-v4"),
     }
 
@@ -163,7 +165,10 @@ def _dump_doc(doc: KnowledgeDocument, indent: str = "      ") -> None:
     print(f"{indent}title            = {doc.title!r}")
     print(f"{indent}source_uri       = {doc.source_uri!r}")
     print(f"{indent}knowledge_base_id= {doc.knowledge_base_id}")
-    print(f"{indent}content          = {doc.content[:100]}{'...' if len(doc.content) > 100 else ''}")
+    print(
+        f"{indent}content          = "
+        f"{doc.content[:100]}{'...' if len(doc.content) > 100 else ''}"
+    )
     print(f"{indent}metadata         = {doc.metadata}")
     print(f"{indent}created_time     = {doc.created_time}")
 
@@ -194,21 +199,21 @@ def _load_chapter_document() -> dict:
     source_uri = os.path.relpath(CHAPTER_FILE, repo_root)
 
     return {
-        "title": "工程控制论（上册）前言",
+        "title": u"工程控制论（上册）前言",
         "source_uri": source_uri,
         "text": text,
         "metadata": {
-            "book": "工程控制论（上册）",
-            "authors": ["钱学森", "宋健"],
+            "book": u"工程控制论（上册）",
+            "authors": [u"钱学森", u"宋健"],
             "kind": "book-chapter",
         },
     }
 
 
 _QUERIES = [
-    "工程控制论第三版保留和修订了哪些内容？",
-    "钱学森在序中如何看待技术革命和控制论的关系？",
-    "电子数字计算机为什么会推动自动控制技术革命？",
+    u"工程控制论第三版保留和修订了哪些内容？",
+    u"钱学森在序中如何看待技术革命和控制论的关系？",
+    u"电子数字计算机为什么会推动自动控制技术革命？",
     "What technical revolutions does Qian Xuesen discuss in the preface?",
     "How does the author describe the relationship between cybernetics and systems engineering?",
     "What role did electronic digital computers play in automation according to the text?",
@@ -222,7 +227,8 @@ _QUERIES = [
 
 def main() -> None:
     # -- Bootstrap ----------------------------------------------------------
-    print("  PostgreSQL URI:", PG_URI)
+    print("  MongoDB URI:", MONGO_URI)
+    print("  MongoDB DB :", MONGO_DB)
 
     # Load real DashScope embedding client from .env
     env = _load_env()
@@ -232,11 +238,13 @@ def main() -> None:
             "DashScope API key not configured. "
             f"Edit {ENV_PATH} to set DASHSCOPE_EMBEDDING_API_KEY."
         )
-    embedding_client = OpenAIEmbeddingClient(dimensions=kwargs.pop("dimensions", 1024), **kwargs)
+    embedding_client = OpenAIEmbeddingClient(
+        dimensions=kwargs.pop("dimensions", 1024), **kwargs
+    )
     print(f"  Embedding: {embedding_client.model}  dim={embedding_client.dimensions}")
 
-    sql_service = SqlDbService(PG_URI)
-    store = SqlKnowledgeStore(sql_service)
+    mongo_service = MongoDbService(uri=MONGO_URI, database_name=MONGO_DB)
+    store = MongoKnowledgeStore(mongo_service)
     chunker = FixedSizeChunker(chunk_size=800, chunk_overlap=100)
 
     service = KnowledgeBaseService(
@@ -251,16 +259,16 @@ def main() -> None:
     _h1("Step 1: 创建知识库")
     _h2("创建 kb1 — 工程控制论文档库")
     kb1 = service.create_knowledge_base(
-        name="工程控制论",
-        description="存放《工程控制论》真实 markdown 文件内容",
-        metadata={"owner": "dev-team", "env": "live-test"},
+        name=u"工程控制论",
+        description=u"存放《工程控制论》真实 markdown 文件内容",
+        metadata={"owner": "dev-team", "env": "live-test", "store": "mongo"},
     )
     _dump_kb(kb1)
 
     _h2("创建 kb2 — 空知识库（用于验证空列表/空搜索）")
     kb2 = service.create_knowledge_base(
-        name="空知识库",
-        description="这个库没有任何文档",
+        name=u"空知识库",
+        description=u"这个库没有任何文档",
     )
     _dump_kb(kb2)
 
@@ -321,7 +329,7 @@ def main() -> None:
         print(f"\n  --- 文档 [{doc.id[-8:]}] ---")
         _dump_doc(doc)
 
-    _pause("文档列表查看完成", "retrieve × 6")
+    _pause("文档列表查看完成", "retrieve x 6")
 
     # =======================================================================
     # Step 5: Search / retrieve
@@ -337,12 +345,12 @@ def main() -> None:
                 _dump_result(r, i)
 
     _h2("检索空知识库 kb2 — 应返回空列表")
-    empty_results = service.retrieve(query="测试", knowledge_base_id=kb2.id)
+    empty_results = service.retrieve(query=u"测试", knowledge_base_id=kb2.id)
     print(f"  结果数: {len(empty_results)}  (应为 0)")
 
     _h2("retrieve_as_context — 格式化上下文")
     context = service.retrieve_as_context(
-        query="工程控制论如何讨论技术革命？",
+        query=u"工程控制论如何讨论技术革命？",
         knowledge_base_id=kb1.id,
         top_k=2,
     )
@@ -382,8 +390,12 @@ def main() -> None:
 
     # Verify search no longer returns chunks from deleted doc
     _h2("检索验证: 删除文档的 chunks 不应再出现")
-    results_after = service.retrieve(query="控制论", knowledge_base_id=kb1.id, top_k=5)
-    deleted_chunks = [r for r in results_after if r.chunk.document_id == target_doc_id]
+    results_after = service.retrieve(
+        query=u"控制论", knowledge_base_id=kb1.id, top_k=5
+    )
+    deleted_chunks = [
+        r for r in results_after if r.chunk.document_id == target_doc_id
+    ]
     if deleted_chunks:
         print(f"  ❌ BUG: 检索仍返回 {len(deleted_chunks)} 个已删除文档的 chunk!")
     else:
@@ -398,7 +410,10 @@ def main() -> None:
 
     _h2("删除前状态")
     print(f"  知识库数: {len(service.list_knowledge_bases())}  (应为 2)")
-    print(f"  kb1 文档数: {len(service.list_documents(kb1.id))}  (应为 0，文档已在 Step 6 删除)")
+    print(
+        f"  kb1 文档数: {len(service.list_documents(kb1.id))}  "
+        f"(应为 0，文档已在 Step 6 删除)"
+    )
     print(f"  即将删除: kb2 ({kb2.name!r})")
 
     _pause("确认删除前", "执行 delete_knowledge_base")
@@ -428,9 +443,9 @@ def main() -> None:
     remaining = service.list_knowledge_bases()
     print(f"  剩余知识库数: {len(remaining)}  (应为 0)")
 
-    sql_service.close()
+    mongo_service.close()
 
-    _h1("✅ 全生命周期 live test 完成")
+    _h1("✅ 全生命周期 live test (MongoDB) 完成")
     print("  验证了: create → list → index → get → search → delete_doc → delete_kb")
     print("  数据库已清空，可以重复运行。")
 
