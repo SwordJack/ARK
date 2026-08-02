@@ -4,27 +4,29 @@
 
 ## 脚本说明
 
-| 脚本                     | 用途                                                                        |
-| ------------------------ | --------------------------------------------------------------------------- |
-| `run_knowledge_basic.py` | 对接真实 Embedding API（OpenAI / DashScope / AIMLAPI）的冒烟测试            |
-| `run_lifecycle.py`       | 全生命周期测试：使用 FakeEmbeddingClient，对接 PostgreSQL，逐步验证增删查列 |
+| 脚本                     | 用途                                                                  |
+| ------------------------ | --------------------------------------------------------------------- |
+| `run_knowledge_basic.py` | 对接真实 Embedding API（OpenAI / DashScope / AIMLAPI）的冒烟测试      |
+| `run_lifecycle_sql.py`   | 全生命周期测试：对接真实 DashScope Embedding API，**PostgreSQL** 存储 |
+| `run_lifecycle_mongo.py` | 全生命周期测试：对接真实 DashScope Embedding API，**MongoDB** 存储    |
 
-## `run_lifecycle.py` — 全生命周期测试
+## `run_lifecycle_sql.py` — 全生命周期测试（SQL / PostgreSQL）
 
 ### 前置条件
 
-确保 PostgreSQL 运行且目标数据库存在：
+1. 确保 PostgreSQL 运行且目标数据库存在：
 
-```bash
-# 如果还没有 isobase 数据库，先创建：
-createdb isobase
-```
+   ```bash
+   createdb isobase
+   ```
+
+2. 确保 DashScope API key 已配置在 `.env` 文件中。
 
 ### 运行
 
 ```bash
 # 在仓库根目录执行：
-python -m test.knowledge.live.run_lifecycle
+python -m test.knowledge.live.run_lifecycle_sql
 ```
 
 ### 测试流程
@@ -80,6 +82,59 @@ psql "postgresql://postgres:postgres@localhost:5432/isobase" \
 | `retrieve_as_context`   | 5    |
 | `delete_document`       | 6    |
 | `delete_knowledge_base` | 7    |
+
+## `run_lifecycle_mongo.py` — 全生命周期测试（MongoDB）
+
+### 前置条件
+
+1. 确保 MongoDB 运行在 `localhost:27017`。
+
+2. 确保 DashScope API key 已配置在 `.env` 文件中。
+
+### 运行
+
+```bash
+# 在仓库根目录执行：
+python -m test.knowledge.live.run_lifecycle_mongo
+```
+
+### 测试流程
+
+与 `run_lifecycle_sql.py` 完全一致（8 个 Step），但使用 MongoDB 作为存储后端。
+
+| Step | 操作                                             | 可在此步用 mongosh 查看的集合                                     |
+| ---- | ------------------------------------------------ | ----------------------------------------------------------------- |
+| 1    | 创建两个知识库（一个放文档，一个空的）           | `knowledge_bases`                                                 |
+| 2    | `list_knowledge_bases()` 列出所有                | `knowledge_bases`                                                 |
+| 3    | 索引 1 篇文档（分块 + 嵌入）                     | `knowledge_documents`、`knowledge_chunks`、`knowledge_embeddings` |
+| 4    | `list_documents` + `get_document` 逐条查看       | `knowledge_documents`                                             |
+| 5    | 6 次检索 + 空库检索 + `retrieve_as_context`      | 无新写入                                                          |
+| 6    | `delete_document` 删除文档 + 验证 chunk 级联清除 | 观察 `knowledge_chunks` / `knowledge_embeddings` 中对应文档消失   |
+| 7    | `delete_knowledge_base` 删除空库 + 验证          | 观察 `knowledge_bases` 中对应文档消失                             |
+| 8    | 清理剩余 kb1，库清空                             | 所有集合为空                                                      |
+
+### 在暂停期间用 mongosh 查看数据
+
+```bash
+# 查看所有知识库
+mongosh "mongodb://localhost:27017/isobase" \
+  --eval "db.knowledge_bases.find().pretty()"
+
+# 查看所有文档
+mongosh "mongodb://localhost:27017/isobase" \
+  --eval "db.knowledge_documents.find().pretty()"
+
+# 查看所有 chunk
+mongosh "mongodb://localhost:27017/isobase" \
+  --eval "db.knowledge_chunks.find().pretty()"
+
+# 统计各集合文档数
+mongosh "mongodb://localhost:27017/isobase" \
+  --eval "db.knowledge_bases.countDocuments()" \
+  --eval "db.knowledge_documents.countDocuments()" \
+  --eval "db.knowledge_chunks.countDocuments()" \
+  --eval "db.knowledge_embeddings.countDocuments()"
+```
 
 ## `run_knowledge_basic.py` — Embedding API 冒烟测试
 

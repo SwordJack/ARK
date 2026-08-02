@@ -210,7 +210,8 @@ isobase/knowledge/
 ├── stores/
 │   ├── base.py         # BaseKnowledgeStore 抽象基类
 │   ├── memory.py       # 内存存储（MVP）
-│   └── sql.py          # SQL 后端存储（未来）
+│   ├── sql.py          # SQL 后端存储
+│   └── mongo.py        # MongoDB 后端存储
 ├── retrieval/          # 混合检索（未来）
 ├── service.py          # KnowledgeBaseService 编排
 └── tools.py            # LLM 工具包装器
@@ -344,6 +345,32 @@ store = SqlKnowledgeStore(db_service)
 - 与现有 `database/sql.py` 集成
 - `document.content` 是全文的唯一持久来源；chunk 内容在读取时派生
 
+### MongoDB 存储
+
+使用 MongoDB 的持久化存储：
+
+```python
+from isobase.knowledge.stores import MongoKnowledgeStore
+from isobase.database.mongo import MongoDbService
+
+mongo_service = MongoDbService(
+    uri="mongodb://localhost:27017",
+    database_name="isobase",
+)
+store = MongoKnowledgeStore(mongo_service)
+
+# 也可以直接使用全局默认 mongo_db 实例：
+# store = MongoKnowledgeStore()
+```
+
+**特性：**
+
+- 持久存储，使用原生 BSON 类型（embedding 无需 JSON 序列化）
+- MongoDB 自动生成 BSON `ObjectId` 作为文档标识符
+- BSON `array<double>` 以紧凑二进制形式存储 embedding 向量——比 JSON 文本更省空间
+- 与现有 `database/mongo.py` 集成
+- 适合生产级服务端部署
+
 ## 路线图
 
 ### Phase 1: MVP（当前）
@@ -355,13 +382,14 @@ store = SqlKnowledgeStore(db_service)
 - ✅ KnowledgeBaseService
 - ✅ LLM 工具集成
 
-### Phase 2: SQL 持久化
+### Phase 2: 持久化
 
 - ✅ SQL 后端存储 (`SqlKnowledgeStore`)
+- ✅ MongoDB 后端存储 (`MongoKnowledgeStore`)
 - ✅ 生命周期 API: 文档和知识库的 `get` / `list` / `delete`
 - ✅ `KnowledgeBaseService` 构造函数 `embed_batch_size`
 - [ ] 模式迁移
-- [ ] 向量存储（初始为 JSON）
+- [ ] 向量存储优化（pgvector, MongoDB Atlas Vector Search）
 
 ### Phase 3: 增强检索
 

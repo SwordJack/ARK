@@ -125,7 +125,8 @@ isobase/knowledge/
 │   ├── __init__.py
 │   ├── base.py         # BaseKnowledgeStore ABC
 │   ├── memory.py       # In-memory vector store (MVP)
-│   └── sql.py          # SQLAlchemy-backed metadata + vectors
+│   ├── sql.py          # SQLAlchemy-backed metadata + vectors
+│   └── mongo.py        # MongoDB-backed metadata + vectors
 ├── retrieval/
 │   ├── __init__.py
 │   ├── base.py         # BaseRetriever ABC
@@ -133,7 +134,7 @@ isobase/knowledge/
 ├── service.py          # KnowledgeBaseService
 ```
 
-**LLM-side tool integration (``isobase/llm/tools/knowledge.py``):**
+**LLM-side tool integration (`isobase/llm/tools/knowledge.py`):**
 
 ```
 isobase/llm/tools/knowledge.py  # factory wrapping isobase.knowledge into FunctionTool
@@ -782,8 +783,8 @@ class KnowledgeBaseService:
 ### 4.7 LLM Tool Integration (`isobase/llm/tools/knowledge.py`)
 
 The tool factory lives in `isobase/llm/tools/knowledge.py` so that
-``knowledge/`` never imports from ``llm/``.  The dependency flows
-only one way: ``llm/ → knowledge/``.
+`knowledge/` never imports from `llm/`. The dependency flows
+only one way: `llm/ → knowledge/`.
 
 ```python
 from isobase.llm.tools.base import FunctionTool
@@ -862,20 +863,20 @@ def create_knowledge_search_tool(
 - `isobase/knowledge/README.zh-cn.md` - Chinese version
 - Code examples in README
 
-### Phase 2: SQL Persistence  ✅ (core done)
+### Phase 2: SQL Persistence ✅ (core done)
 
 **Goal:** Replace memory store with production-ready SQL backend.
 
 **Completed:**
+
 1. ✅ `stores/sql.py` - SQLAlchemy-backed implementation
 2. ✅ Lifecycle APIs: get/list/delete for documents and knowledge bases
 3. ✅ `embed_batch_size` in `KnowledgeBaseService` constructor (default 20)
 
-**Remaining:**
-4. Schema migrations (if using Alembic)
-5. Vector storage strategy:
-   - SQLite: Store as JSON text (simple, no extensions)
-   - PostgreSQL: Store as JSON initially, migrate to pgvector later
+**Remaining:** 4. Schema migrations (if using Alembic) 5. Vector storage strategy:
+
+- SQLite: Store as JSON text (simple, no extensions)
+- PostgreSQL: Store as JSON initially, migrate to pgvector later
 
 **Integration:**
 
@@ -1012,7 +1013,6 @@ embeddings = client.embed_texts(texts)  # Single API call if ≤20 texts
 - `KnowledgeBaseService` batches automatically via `embed_batch_size` (set at construction time, defaults to conservative 20)
 - For large document sets (>1000 docs), use batch processing with delays
 - Store dimensions in KnowledgeBase metadata to prevent mismatch
-
 
 ### 6.3 OpenAI Native
 
@@ -1299,11 +1299,13 @@ def test_e2e_index_and_retrieve():
 - Vector similarity computation (scales with chunk count)
 - Memory store: O(n) linear scan
 - SQL store: Full table scan without vector index
+- Mongo store: Multi-collection lookup, same O(n) linear scan without vector index
 
 **Optimizations:**
 
 - Limit chunk count per knowledge base (< 10K for memory store)
 - Use pgvector for PostgreSQL (enables HNSW/IVFFlat indexes)
+- Use MongoDB Atlas Vector Search for Mongo store (enables ANN indexes)
 - Pre-filter by metadata before similarity computation
 
 ### 10.3 Memory Usage
@@ -1359,6 +1361,7 @@ def test_e2e_index_and_retrieve():
 - pgvector (PostgreSQL extension)
 - FAISS (local file-based)
 - Qdrant / Milvus (dedicated vector DBs)
+- MongoDB Atlas Vector Search (cloud-hosted ANN for existing Mongo stores)
 
 **Decision criteria:**
 

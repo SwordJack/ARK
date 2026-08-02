@@ -219,7 +219,8 @@ isobase/knowledge/
 ├── stores/
 │   ├── base.py         # BaseKnowledgeStore ABC
 │   ├── memory.py       # In-memory store (MVP)
-│   └── sql.py          # SQL-backed store (future)
+│   ├── sql.py          # SQL-backed store
+│   └── mongo.py        # MongoDB-backed store
 ├── retrieval/          # Hybrid retrieval (future)
 ├── service.py          # KnowledgeBaseService orchestration
 └── tools.py            # LLM tool wrappers
@@ -363,6 +364,32 @@ store = SqlKnowledgeStore(db_service)
 - Integration with existing `database/sql.py`
 - `document.content` is the single source of truth for full text; chunk content is derived at read time
 
+### Mongo Store
+
+Persistent storage using MongoDB:
+
+```python
+from isobase.knowledge.stores import MongoKnowledgeStore
+from isobase.database.mongo import MongoDbService
+
+mongo_service = MongoDbService(
+    uri="mongodb://localhost:27017",
+    database_name="isobase",
+)
+store = MongoKnowledgeStore(mongo_service)
+
+# Or simply use the global default mongo_db instance:
+# store = MongoKnowledgeStore()
+```
+
+**Features:**
+
+- Persistent storage with native BSON types (no JSON serialization overhead for embeddings)
+- MongoDB automatically generates BSON `ObjectId` as document identifiers
+- BSON `array<double>` stores embedding vectors in compact binary form — more space-efficient than JSON text
+- Integration with existing `database/mongo.py`
+- Suitable for production server-side deployments
+
 ## Design Principles
 
 ### Provider Neutrality
@@ -414,11 +441,17 @@ Follows existing patterns:
 - Suitable for <10K chunks
 - ~100ms for 1K chunks on typical hardware
 
-**SQL Store (future):**
+**SQL Store:**
 
 - Full table scan without vector index
 - pgvector enables HNSW/IVFFlat indexes
 - Sub-100ms for 100K+ chunks with proper indexing
+
+**Mongo Store:**
+
+- Multi-collection lookup per-chunk (chunks + embeddings + documents)
+- MongoDB Atlas Vector Search enables ANN indexes (cloud-hosted only)
+- Local community edition uses Python-side cosine similarity
 
 ### Memory Usage
 
@@ -439,13 +472,14 @@ Follows existing patterns:
 - ✅ KnowledgeBaseService
 - ✅ LLM tool integration
 
-### Phase 2: SQL Persistence
+### Phase 2: Persistence
 
 - ✅ SQL-backed store (`SqlKnowledgeStore`)
+- ✅ MongoDB-backed store (`MongoKnowledgeStore`)
 - ✅ Lifecycle APIs: `get` / `list` / `delete` for documents and knowledge bases
 - ✅ `embed_batch_size` in `KnowledgeBaseService` constructor
 - [ ] Schema migrations
-- [ ] Vector storage optimization (pgvector)
+- [ ] Vector storage optimization (pgvector, MongoDB Atlas Vector Search)
 
 ### Phase 3: Enhanced Retrieval
 
