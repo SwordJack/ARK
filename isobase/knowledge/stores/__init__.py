@@ -10,10 +10,12 @@
 
 from .base import BaseKnowledgeStore
 from .memory import MemoryKnowledgeStore
+from .mongo import MongoKnowledgeStore
 from .sql import SqlKnowledgeStore
 
 __all__ = [
     "BaseKnowledgeStore",
     "MemoryKnowledgeStore",
+    "MongoKnowledgeStore",
     "SqlKnowledgeStore",
 ]

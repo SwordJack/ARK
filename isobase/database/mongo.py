@@ -174,6 +174,7 @@ class MongoDbModel(ABC):
 
     def __init__(
         self,
+        _id: Optional[Any] = None,
         created_time: Optional[datetime] = None,
         updated_time: Optional[datetime] = None,
         **kwargs: Any,
@@ -181,17 +182,17 @@ class MongoDbModel(ABC):
         """Initializes instance attributes from keyword arguments.
 
         Args:
+            _id (Any, optional): The document ID.
             created_time (datetime, optional): Creation timestamp.
             updated_time (datetime, optional): Update timestamp.
             **kwargs: Additional attributes to assign to the instance.
         """
+        if _id is not None:
+            self._id = _id
         if created_time is not None:
             self.created_time = self._as_service_timezone(created_time)
         if updated_time is not None:
             self.updated_time = self._as_service_timezone(updated_time)
-
-        if "_id" not in kwargs:
-            kwargs["_id"] = str(uuid4())
 
         for key, value in kwargs.items():
             if not hasattr(self, key):
@@ -480,8 +481,6 @@ class MongoDbModel(ABC):
         data = self.to_dict(to_database=True)
         custom_id = data.pop("_id", None)
         data.pop("id", None)
-        if custom_id:
-            data["_id"] = custom_id
         result = self.get_collection().insert_one(data, session=session)
         if not custom_id:
             self._id = result.inserted_id
