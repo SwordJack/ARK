@@ -1164,7 +1164,68 @@ print(response.content)
 
 ## 8. Testing Strategy
 
-### 8.1 Unit Tests
+### 8.1 Store Contract Tests (Shared)
+
+All stores that implement :class:`BaseKnowledgeStore` must pass the same set of
+shared contract tests defined in ``test/knowledge/stores/test_store_contract.py``.
+
+**Purpose:** Store contract tests verify external behaviour, not internal
+implementation details.  A new backend that passes the full contract suite is
+guaranteed to behave identically to every other backend from the perspective of
+``KnowledgeBaseService`` — no matter whether it stores embeddings as JSON text,
+BSON arrays, or something else entirely.
+
+**Data boundary (implementor constraints):**
+
+- The store persists an *indexing snapshot*, not a real-time mirror of the
+  original file system.  ``source_uri`` records provenance only; stores must
+  not assume the external resource still exists.
+- ``KnowledgeChunk.content`` is the direct source of retrieval context and
+  must round-trip through ``search()`` results.
+- ``KnowledgeDocument.content`` is an optional document-text snapshot useful
+  for debugging, display, or future re-indexing.  It is **not** the single
+  source of truth for the original file.
+- Deleting a document / knowledge base removes index data from the store
+  only; it does not delete any external file.
+
+**Contract checklist (19 items):**
+
+1. Create knowledge base
+2. Get knowledge base
+3. List knowledge bases
+4. Raise ``ValueError`` on duplicate KB id
+5. Raise ``KeyError`` on ``get_knowledge_base("missing")``
+6. List knowledge bases returns ``[]`` when store is empty
+7. Add document
+8. Get document
+9. List documents
+10. Raise ``KeyError`` on ``add_document`` to missing KB
+11. Raise ``KeyError`` on ``get_document("missing")``
+12. Raise ``KeyError`` on ``list_documents("missing")``
+13. ``list_documents`` returns ``[]`` when KB has no documents
+14. Add chunks and embeddings
+15. Raise ``ValueError`` when chunk/embedding counts mismatch
+16. Raise ``KeyError`` when adding chunks to a missing KB
+17. Search returns results sorted by descending similarity
+18. Search respects ``top_k``
+19. Search returns ``[]`` for empty or non-existent KB
+20. Search does not return chunks from a different KB
+21. Raise ``ValueError`` on vector dimension mismatch during search
+22. ``delete_document`` cascade-deletes its chunks and embeddings
+23. ``delete_document`` does not affect other documents in the same KB
+24. ``delete_knowledge_base`` cascade-deletes documents, chunks, and embeddings
+25. Raise ``KeyError`` on ``delete_document("missing")``
+26. Raise ``KeyError`` on ``delete_knowledge_base("missing")``
+27. Persistent stores can reload data across store instances
+
+**Adding a new backend:** See ``test/knowledge/stores/__init__.py`` for the
+step-by-step onboarding checklist.
+
+**Backends covered:** ``MemoryKnowledgeStore``, ``SqlKnowledgeStore``
+(parameters: ``["memory", "sql"]``).  ``MongoKnowledgeStore`` is covered by
+live smoke tests because it requires an external MongoDB service.
+
+### 8.2 Unit Tests
 
 **Test chunking (`tests/knowledge/test_chunking.py`):**
 
@@ -1217,7 +1278,7 @@ def test_memory_store_search():
     assert results[0].chunk.id == "c1"
 ```
 
-### 8.2 Integration Tests
+### 8.3 Integration Tests
 
 **End-to-end indexing and retrieval:**
 
@@ -1412,7 +1473,7 @@ def test_e2e_index_and_retrieve():
 - ✅ Lifecycle APIs: get/list/delete for documents and knowledge bases
 - ✅ `embed_batch_size` controls batch size (default 20, adjustable per provider)
 - [ ] Search completes in <1s for 10K chunks
-- [ ] Store contract tests covering both memory and SQL backends
+- ✅ Store contract tests covering both memory and SQL backends
 
 ### Phase 3 (Hybrid Retrieval) Success Criteria
 
