@@ -13,11 +13,18 @@ from isobase.llm.tools.base import FunctionTool
 from isobase.knowledge import KnowledgeBaseService
 
 
+_DEFAULT_DESCRIPTION = (
+    "Search indexed private knowledge. Use when the user asks about "
+    "uploaded documents, project notes, or domain-specific information."
+)
+
+
 def create_knowledge_search_tool(
     service: KnowledgeBaseService,
     knowledge_base_id: str,
     top_k: int = 5,
     tool_name: str = "search_knowledge_base",
+    description: Optional[str] = None,
 ) -> FunctionTool:
     """Creates a knowledge base search tool for LLM integration.
 
@@ -29,6 +36,12 @@ def create_knowledge_search_tool(
         knowledge_base_id: Target knowledge base ID to search.
         top_k: Default number of results to return.
         tool_name: Name of the tool (for LLM tool calling).
+            Use distinct names to expose multiple knowledge bases
+            (e.g. ``"search_tech_docs"``, ``"search_policies"``).
+        description: Tool description shown to the LLM.  When None
+            (default), a generic description is used.  Provide a
+            custom description to tell the model what kind of
+            knowledge this particular base contains.
 
     Returns:
         A FunctionTool that can be added to a ToolSet.
@@ -67,8 +80,5 @@ def create_knowledge_search_tool(
     return FunctionTool(
         mapped_callable=search_knowledge_base,
         name=tool_name,
-        description=(
-            "Search indexed private knowledge. Use when the user asks about "
-            "uploaded documents, project notes, or domain-specific information."
-        ),
+        description=description or _DEFAULT_DESCRIPTION,
     )

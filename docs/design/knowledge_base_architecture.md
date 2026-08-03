@@ -893,34 +893,68 @@ def create_knowledge_search_tool(
 - Concurrent writes don't corrupt data
 - Search performance acceptable for 1K-10K chunks
 
-### Phase 3: Enhanced Retrieval
+### Phase 3: Markdown Structure-Aware Chunking
 
-**Goal:** Add hybrid retrieval and reranking.
+**Goal:** Improve retrieval quality by preserving Markdown structure during chunking.
 
 **Scope:**
 
-1. `retrieval/base.py` - BaseRetriever ABC ✅
-2. `retrieval/dense.py` - Dense retriever (refactor from store) ✅
-3. `retrieval/sparse.py` - BM25 sparse retriever
-4. `retrieval/fusion.py` - RRF (Reciprocal Rank Fusion)
-5. `retrieval/rerank.py` - Reranker interface (no implementation yet)
+1. `chunking/base.py` - Add `ChunkSection(content, metadata)` return type
+2. `chunking/fixed.py` - Adapt fixed chunker to return `ChunkSection`
+3. `chunking/markdown.py` - Markdown heading-aware chunker
+4. `isobase/utils/markdown_fixer.py` - Markdown normalization and front matter extraction
+5. `service.py` - Preserve chunk metadata such as `heading_path` and `chunk_strategy`
+
+**Explicitly deferred:** BM25, RRF, rerank, parser directory, PDF/URL ingestion, async indexing, pgvector, FAISS.
 
 **Validation criteria:**
 
-- Hybrid retrieval outperforms dense-only on test queries
-- Fusion correctly merges ranked lists
+- Markdown chunks preserve heading path metadata
+- Oversized Markdown sections still respect chunk size / overlap rules
+- Existing fixed-size chunking behavior remains compatible through `ChunkSection`
+- `KnowledgeBaseService` stores chunker-provided metadata on `KnowledgeChunk`
 
-### Phase 4: Document Parsers
+### Phase 4: Retrieval Enhancement
 
-**Goal:** Support structured document ingestion.
+**Goal:** Add retrieval extension points before introducing hybrid retrieval or reranking.
+
+**Rationale:** AstrBot's retrieval layer combines FAISS dense retrieval, FTS5/BM25 sparse retrieval, RRF fusion, and optional rerank. That is a useful reference, but it is a larger architecture phase than Markdown chunking. IsoBase should keep dense-only retrieval as the default while designing the interfaces needed for optional enhancements.
+
+**Recommended sequence:**
+
+1. `RetrievalOptions` / retrieval pipeline interface
+   - Distinguish `candidate_k` from final `top_k`
+   - Define metadata filters and score source semantics
+2. Optional rerank hook
+   - `BaseReranker` / `NoOpReranker`
+   - Provider-neutral; disabled by default
+3. Sparse retrieval
+   - Evaluate BM25 vs. SQLite FTS5 and tokenizer requirements
+   - Define backend capability behavior for memory / SQL / Mongo
+4. Fusion
+   - Add RRF only after dense and sparse retrieval both exist
+5. Vector index backends
+   - Evaluate pgvector, MongoDB Atlas Vector Search, and FAISS as performance backends
+
+**Validation criteria:**
+
+- Dense-only retrieval remains the default and keeps existing behavior
+- Store lifecycle contract remains stable
+- Hybrid / rerank features are optional and provider-neutral
+- Score semantics are explicit (`dense`, `sparse`, `fused`, `rerank`, etc.)
+
+### Phase 5: Document Parsers
+
+**Goal:** Support structured document ingestion after Markdown chunking and retrieval semantics are stable.
 
 **Scope:**
 
 1. `parsers/base.py` - BaseDocumentParser
 2. `parsers/text.py` - Plain text
-3. `parsers/markdown.py` - Markdown with heading preservation
-4. `parsers/pdf.py` - PDF extraction
-5. `parsers/url.py` - Web page extraction
+3. `parsers/pdf.py` - PDF extraction
+4. `parsers/url.py` - Web page extraction
+
+**Note:** Markdown structure-aware splitting lives in `chunking/markdown.py`, not `parsers/markdown.py`, unless a future parser phase introduces a true document-format parser.
 
 **New dependencies:**
 
@@ -928,13 +962,13 @@ def create_knowledge_search_tool(
 - `beautifulsoup4` (HTML)
 - `markitdown` (optional, unified parser)
 
-### Phase 5: Advanced Features (Future)
+### Phase 6: Advanced Features (Future)
 
 - Async/batch indexing
 - Incremental updates (update/delete chunks)
 - Multi-knowledge-base search
 - Query expansion
-- Metadata filtering
+- Advanced metadata filtering
 - pgvector migration for PostgreSQL
 
 ## 6. Embedding API Integration Details
@@ -1451,8 +1485,6 @@ def test_e2e_index_and_retrieve():
 - Semantic chunking (LLM-based)
 - Document-structure-aware (Markdown headers, PDF sections)
 
-**Decision point:** Phase 4 (after parsers are implemented).
-
 ## 13. Success Metrics
 
 ### Phase 1 (MVP) Success Criteria
@@ -1476,11 +1508,19 @@ def test_e2e_index_and_retrieve():
 - [ ] Search completes in <1s for 10K chunks
 - ✅ Store contract tests covering both memory and SQL backends
 
-### Phase 3 (Hybrid Retrieval) Success Criteria
+### Phase 3 (Markdown Chunking) Success Criteria
 
-- [ ] Hybrid retrieval outperforms dense-only by >10% on test queries
-- [ ] RRF fusion correctly merges ranked lists
-- [ ] Sparse retrieval finds exact keyword matches missed by dense
+- [ ] Markdown chunks preserve heading path metadata
+- [ ] Oversized Markdown sections respect chunk size / overlap rules
+- [ ] All Phase 1/2 tests pass with `ChunkSection` return type
+- [ ] `KnowledgeBaseService` stores chunker-provided metadata on `KnowledgeChunk`
+
+### Phase 4 (Retrieval Enhancement) Success Criteria
+
+- [ ] Hybrid / rerank features are optional and provider-neutral
+- [ ] Score semantics are explicit (`dense`, `sparse`, `fused`, `rerank`, etc.)
+- [ ] Dense-only retrieval remains the default and keeps existing behavior
+- [ ] Store lifecycle contract remains stable
 
 ## 14. References
 

@@ -65,7 +65,7 @@ from isobase.llm.tools import FunctionTool
 
 def get_weather(city: str) -> tuple[bool, str]:
     """Get the current weather for a city.
-    
+
     Args:
         city: The name of the city.
     """
@@ -162,11 +162,12 @@ Manual live API smoke tests (not run by pytest) live in `test/llm/live/` — cop
 - `OpenAIChat` provider: non-streaming, streaming, multi-turn tool calling, multimodal image input, history preservation on error.
 - `AnthropicMessages` provider: non-streaming, streaming, multi-turn tool calling, multimodal image input, extended thinking, top-level `system`, mandatory `max_tokens`, and resilience to compatible gateways that send `message_start.content: null`.
 - Neutral `FunctionTool` with bidirectional OpenAI/Anthropic schema conversion and a shared execution core (`ToolSet.execute_tool_calls` / `execute_tool_calls_anthropic`).
+- Knowledge-base search tool integration via `isobase.llm.tools.knowledge.create_knowledge_search_tool`.
 - Unit tests mocking each SDK (`test/llm/providers/`), plus a manual live runner (`test/llm/live/`).
 
 ### Not yet done (future)
 
-- **RAG**: retrieval-augmented generation is not implemented; the `ToolSet` / `LLMResponse` entry points leave room for it.
+- **RAG automation**: knowledge-base search can be exposed as a `FunctionTool`; higher-level automatic RAG orchestration remains future work.
 - **MCP**: Model Context Protocol integration is not implemented (room is left at the same tool entry points).
 - **More providers**: e.g. OpenAI Responses API (would be a separate class, not `OpenAIChat`), Gemini, etc.
 - **Structured outputs**: provider-native JSON-schema / strict-output modes are not surfaced through the neutral layer yet.
