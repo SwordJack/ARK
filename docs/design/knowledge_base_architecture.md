@@ -1188,7 +1188,7 @@ BSON arrays, or something else entirely.
 - Deleting a document / knowledge base removes index data from the store
   only; it does not delete any external file.
 
-**Contract checklist (19 items):**
+**Contract checklist (27 items):**
 
 1. Create knowledge base
 2. Get knowledge base
@@ -1221,9 +1221,10 @@ BSON arrays, or something else entirely.
 **Adding a new backend:** See `test/knowledge/stores/__init__.py` for the
 step-by-step onboarding checklist.
 
-**Backends covered:** `MemoryKnowledgeStore`, `SqlKnowledgeStore`
-(parameters: `["memory", "sql"]`). `MongoKnowledgeStore` is covered by
-live smoke tests because it requires an external MongoDB service.
+**Backends covered:** `MemoryKnowledgeStore`, `SqlKnowledgeStore`,
+`MongoKnowledgeStore` (parameters: `["memory", "sql", "mongo"]`).
+Mongo tests are auto-skipped when no MongoDB server is reachable on
+`localhost:27017`.
 
 ### 8.2 Unit Tests
 

@@ -33,8 +33,8 @@ class KnowledgeBase:
         updated_time: Timestamp of last update.
     """
 
-    id: str
-    name: str
+    id: str = ""
+    name: str = ""
     description: str = ""
     embedding_model_id: str = ""
     dimensions: int = 1024
@@ -62,9 +62,9 @@ class KnowledgeDocument:
         created_time: Timestamp of document creation.
     """
 
-    id: str
-    knowledge_base_id: str
-    title: str
+    id: str = ""
+    knowledge_base_id: str = ""
+    title: str = ""
     source_uri: str = ""
     content: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -96,11 +96,11 @@ class KnowledgeChunk:
         metadata: Additional metadata (heading path, page number, etc.).
     """
 
-    id: str
-    document_id: str
-    knowledge_base_id: str
-    content: str
-    index: int
+    id: str = ""
+    document_id: str = ""
+    knowledge_base_id: str = ""
+    content: str = ""
+    index: int = 0
     token_count: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)
 

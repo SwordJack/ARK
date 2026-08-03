@@ -52,14 +52,14 @@ class KnowledgeBaseMongoModel(MongoDbModel):
             **kwargs: Forwarded to :class:`MongoDbModel` (e.g. ``_id``,
                 ``created_time``, ``updated_time``).
         """
+        self.name = name
+        self.description = description
+        self.embedding_model_id = embedding_model_id
+        self.dimensions = dimensions
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        self.metadata = metadata or {}
         super().__init__(
-            name=name,
-            description=description,
-            embedding_model_id=embedding_model_id,
-            dimensions=dimensions,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            metadata=metadata or {},
             **kwargs,
         )
 
@@ -89,12 +89,12 @@ class KnowledgeDocumentMongoModel(MongoDbModel):
             **kwargs: Forwarded to :class:`MongoDbModel` (e.g. ``_id``,
                 ``created_time``).
         """
+        self.knowledge_base_id = knowledge_base_id
+        self.title = title
+        self.source_uri = source_uri
+        self.content = content
+        self.metadata = metadata or {}
         super().__init__(
-            knowledge_base_id=knowledge_base_id,
-            title=title,
-            source_uri=source_uri,
-            content=content,
-            metadata=metadata or {},
             **kwargs,
         )
 
@@ -125,13 +125,13 @@ class KnowledgeChunkMongoModel(MongoDbModel):
             metadata: Additional metadata (heading path, page number, etc.).
             **kwargs: Forwarded to :class:`MongoDbModel` (e.g. ``_id``).
         """
+        self.document_id = document_id
+        self.knowledge_base_id = knowledge_base_id
+        self.content = content
+        self.index = index
+        self.token_count = token_count
+        self.metadata = metadata or {}
         super().__init__(
-            document_id=document_id,
-            knowledge_base_id=knowledge_base_id,
-            content=content,
-            index=index,
-            token_count=token_count,
-            metadata=metadata or {},
             **kwargs,
         )
 
@@ -154,9 +154,9 @@ class KnowledgeEmbeddingMongoModel(MongoDbModel):
             embedding: Embedding vector as a list of floats.
             **kwargs: Forwarded to :class:`MongoDbModel` (e.g. ``_id``).
         """
+        self.chunk_id = chunk_id
+        self.embedding = embedding or []
         super().__init__(
-            chunk_id=chunk_id,
-            embedding=embedding or [],
             **kwargs,
         )
 

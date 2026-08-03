@@ -14,8 +14,9 @@
 #
 # ``test_store_contract.py`` defines the shared behaviour contract that every
 # :class:`~isobase.knowledge.stores.BaseKnowledgeStore` implementation must
-# satisfy.  A new backend that passes this suite is guaranteed to behave
-# identically to Memory / SQL / Mongo stores from the perspective of
+# satisfy. A new backend that passes this suite is guaranteed to behave
+# identically to the backends parametrized in the shared contract (currently
+# memory, sql, mongo) from the perspective of
 # :class:`~isobase.knowledge.KnowledgeBaseService`.
 #
 # How to onboard a new backend (e.g. ``PgVectorKnowledgeStore``):
