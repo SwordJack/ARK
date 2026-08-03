@@ -1,9 +1,9 @@
 #! python3
 # -*- encoding: utf-8 -*-
-"""Tests for knowledge retrieval strategies.
+"""Tests for dense knowledge retrieval strategies.
 
-@File   :   test_retrieval.py
-@Created:   2026/08/03 19:59 (UTC+08:00)
+@File   :   test_dense.py
+@Created:   2026/08/04 01:00 (UTC+08:00)
 @Author :   SwordJack
 #Contact:   https://github.com/SwordJack/
 """

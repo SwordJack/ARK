@@ -15,47 +15,6 @@ from isobase.knowledge.entities import (
     KnowledgeChunk,
 )
 from isobase.knowledge.stores import MemoryKnowledgeStore
-from isobase.knowledge.stores.memory import cosine_similarity
-
-
-def test_cosine_similarity_identical_vectors():
-    """Test cosine similarity of identical vectors."""
-    vec = [1.0, 2.0, 3.0]
-    similarity = cosine_similarity(vec, vec)
-    assert abs(similarity - 1.0) < 1e-6
-
-
-def test_cosine_similarity_orthogonal_vectors():
-    """Test cosine similarity of orthogonal vectors."""
-    vec1 = [1.0, 0.0, 0.0]
-    vec2 = [0.0, 1.0, 0.0]
-    similarity = cosine_similarity(vec1, vec2)
-    assert abs(similarity - 0.0) < 1e-6
-
-
-def test_cosine_similarity_opposite_vectors():
-    """Test cosine similarity of opposite vectors."""
-    vec1 = [1.0, 0.0]
-    vec2 = [-1.0, 0.0]
-    similarity = cosine_similarity(vec1, vec2)
-    assert abs(similarity - (-1.0)) < 1e-6
-
-
-def test_cosine_similarity_different_lengths():
-    """Test cosine similarity with different vector lengths."""
-    vec1 = [1.0, 2.0]
-    vec2 = [1.0, 2.0, 3.0]
-
-    with pytest.raises(ValueError, match="Vectors must have the same length"):
-        cosine_similarity(vec1, vec2)
-
-
-def test_cosine_similarity_zero_vector():
-    """Test cosine similarity with zero vector."""
-    vec1 = [0.0, 0.0, 0.0]
-    vec2 = [1.0, 2.0, 3.0]
-    similarity = cosine_similarity(vec1, vec2)
-    assert similarity == 0.0
 
 
 def test_memory_store_create_knowledge_base():
