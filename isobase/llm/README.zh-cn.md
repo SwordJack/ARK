@@ -65,7 +65,7 @@ from isobase.llm.tools import FunctionTool
 
 def get_weather(city: str) -> tuple[bool, str]:
     """Get the current weather for a city.
-    
+
     Args:
         city: The name of the city.
     """
@@ -163,11 +163,12 @@ print(resp.content)            # 最终回答
 - `OpenAIChat` provider：非流式、流式、多轮工具调用、多模态图像输入、出错时保留历史。
 - `AnthropicMessages` provider：非流式、流式、多轮工具调用、多模态图像输入、扩展思考、顶层 `system`、必填 `max_tokens`，以及对发送 `message_start.content: null` 的兼容网关的健壮处理。
 - 中立 `FunctionTool`，含 OpenAI/Anthropic schema 双向转化与共享的执行核（`ToolSet.execute_tool_calls` / `execute_tool_calls_anthropic`）。
+- 通过 `isobase.llm.tools.knowledge.create_knowledge_search_tool` 集成知识库检索工具。
 - 对各 SDK 打桩的单元测试（`test/llm/providers/`），以及一个手动真实联调脚本（`test/llm/live/`）。
 
 ### 尚未完成（以后做）
 
-- **RAG**：检索增强生成尚未实现；`ToolSet` / `LLMResponse` 出入口已为其预留空间。
+- **RAG 自动化**：知识库检索已经可以作为 `FunctionTool` 暴露；更高层的自动 RAG 编排仍留待后续实现。
 - **MCP**：Model Context Protocol 集成尚未实现（在同样的工具出入口预留了空间）。
 - **更多 provider**：例如 OpenAI Responses API（会是一个独立的类，而非 `OpenAIChat`）、Gemini 等。
 - **结构化输出**：各厂商原生的 JSON-schema / 严格输出模式尚未通过中立层暴露。
