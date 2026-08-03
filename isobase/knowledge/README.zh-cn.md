@@ -212,7 +212,10 @@ isobase/knowledge/
 │   ├── memory.py       # 内存存储（MVP）
 │   ├── sql.py          # SQL 后端存储
 │   └── mongo.py        # MongoDB 后端存储
-├── retrieval/          # 混合检索（未来）
+├── retrieval/
+│   ├── __init__.py     # 检索模块导出
+│   ├── base.py         # BaseRetriever 抽象基类
+│   └── dense.py        # 稠密向量检索器（余弦相似度）
 ├── service.py          # KnowledgeBaseService 编排
 └── tools.py            # LLM 工具包装器
 ```

@@ -221,7 +221,10 @@ isobase/knowledge/
 │   ├── memory.py       # In-memory store (MVP)
 │   ├── sql.py          # SQL-backed store
 │   └── mongo.py        # MongoDB-backed store
-├── retrieval/          # Hybrid retrieval (future)
+├── retrieval/
+│   ├── __init__.py     # Retrieval exports
+│   ├── base.py         # BaseRetriever ABC
+│   └── dense.py        # Dense retriever (cosine similarity)
 ├── service.py          # KnowledgeBaseService orchestration
 └── tools.py            # LLM tool wrappers
 ```

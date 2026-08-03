@@ -25,7 +25,7 @@ from isobase.knowledge.stores import (
     SqlKnowledgeStore,
 )
 from isobase.knowledge.stores.base import BaseKnowledgeStore
-from isobase.knowledge.stores.memory import cosine_similarity
+from isobase.knowledge.retrieval import cosine_similarity
 
 
 StoreFactory = Callable[[], BaseKnowledgeStore]

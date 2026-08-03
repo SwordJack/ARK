@@ -899,8 +899,8 @@ def create_knowledge_search_tool(
 
 **Scope:**
 
-1. `retrieval/base.py` - BaseRetriever ABC
-2. `retrieval/dense.py` - Dense retriever (refactor from store)
+1. `retrieval/base.py` - BaseRetriever ABC ✅
+2. `retrieval/dense.py` - Dense retriever (refactor from store) ✅
 3. `retrieval/sparse.py` - BM25 sparse retriever
 4. `retrieval/fusion.py` - RRF (Reciprocal Rank Fusion)
 5. `retrieval/rerank.py` - Reranker interface (no implementation yet)

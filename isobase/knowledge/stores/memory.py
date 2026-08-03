@@ -18,42 +18,8 @@ from ..entities import (
     KnowledgeChunk,
     RetrievalResult
 )
+from ..retrieval import DenseRetriever, DenseRetrievalItem
 from .base import BaseKnowledgeStore
-
-
-def cosine_similarity(a: List[float], b: List[float]) -> float:
-    """Computes cosine similarity between two vectors.
-
-    Args:
-        a: First vector.
-        b: Second vector.
-
-    Returns:
-        Cosine similarity score in range [-1, 1].
-        Returns 0.0 if either vector has zero magnitude.
-
-    Raises:
-        ValueError: If vectors have different lengths.
-
-    Example:
-        >>> cosine_similarity([1.0, 0.0, 0.0], [1.0, 0.0, 0.0])
-        1.0
-        >>> cosine_similarity([1.0, 0.0], [0.0, 1.0])
-        0.0
-    """
-    if len(a) != len(b):
-        raise ValueError(
-            f"Vectors must have the same length: {len(a)} != {len(b)}"
-        )
-
-    dot_product = sum(x * y for x, y in zip(a, b))
-    norm_a = sum(x * x for x in a) ** 0.5
-    norm_b = sum(y * y for y in b) ** 0.5
-
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-
-    return dot_product / (norm_a * norm_b)
 
 
 class MemoryKnowledgeStore(BaseKnowledgeStore):
@@ -73,6 +39,7 @@ class MemoryKnowledgeStore(BaseKnowledgeStore):
         self.documents: Dict[str, KnowledgeDocument] = {}
         self.chunks: Dict[str, KnowledgeChunk] = {}
         self.embeddings: Dict[str, List[float]] = {}  # chunk_id -> vector
+        self.retriever = DenseRetriever()
 
     def create_knowledge_base(self, kb: KnowledgeBase) -> KnowledgeBase:
         """Creates a new knowledge base.
@@ -301,22 +268,16 @@ class MemoryKnowledgeStore(BaseKnowledgeStore):
         if not kb_chunks:
             return []
 
-        # Compute similarities
-        results = []
-        for chunk_id, chunk in kb_chunks:
-            embedding = self.embeddings[chunk_id]
-            score = cosine_similarity(query_embedding, embedding)
-
-            # Optionally fetch parent document
-            doc = self.documents.get(chunk.document_id)
-
-            results.append(RetrievalResult(
+        items = [
+            DenseRetrievalItem(
                 chunk=chunk,
-                score=score,
-                document=doc
-            ))
-
-        # Sort by score descending
-        results.sort(key=lambda r: r.score, reverse=True)
-
-        return results[:top_k]
+                embedding=self.embeddings[chunk_id],
+                document=self.documents.get(chunk.document_id),
+            )
+            for chunk_id, chunk in kb_chunks
+        ]
+        return self.retriever.retrieve(
+            query_embedding=query_embedding,
+            items=items,
+            top_k=top_k,
+        )

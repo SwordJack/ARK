@@ -23,8 +23,8 @@ from ..entities import (
     KnowledgeDocument,
     RetrievalResult,
 )
+from ..retrieval import DenseRetriever, DenseRetrievalItem
 from .base import BaseKnowledgeStore
-from .memory import cosine_similarity
 
 
 class KnowledgeSqlBase(DeclarativeBase):
@@ -126,6 +126,7 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
         KnowledgeDocumentModel.use_sql_service(sql_service)
         KnowledgeChunkModel.use_sql_service(sql_service)
         KnowledgeEmbeddingModel.use_sql_service(sql_service)
+        self.retriever = DenseRetriever()
 
     # ------------------------------------------------------------------
     # Knowledge base CRUD
@@ -389,23 +390,24 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
                 .where(KnowledgeChunkModel.knowledge_base_id == kb_id)
             ).all()
 
-            results = []
+            items = []
             for chunk_model, embedding_model in rows:
-                embedding = json.loads(embedding_model.embedding)
-                score = cosine_similarity(query_embedding, embedding)
                 chunk = self._model_to_chunk(chunk_model)
                 doc_model = session.get(KnowledgeDocumentModel, chunk.document_id)
                 doc = None
                 if doc_model is not None:
                     doc = self._model_to_doc(doc_model)
-                results.append(RetrievalResult(
+                items.append(DenseRetrievalItem(
                     chunk=chunk,
-                    score=score,
+                    embedding=json.loads(embedding_model.embedding),
                     document=doc,
                 ))
 
-        results.sort(key=lambda r: r.score, reverse=True)
-        return results[:top_k]
+        return self.retriever.retrieve(
+            query_embedding=query_embedding,
+            items=items,
+            top_k=top_k,
+        )
 
     # ------------------------------------------------------------------
     # DTO ↔ model converters

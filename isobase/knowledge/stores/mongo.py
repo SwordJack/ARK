@@ -19,8 +19,8 @@ from ..entities import (
     KnowledgeDocument,
     RetrievalResult,
 )
+from ..retrieval import DenseRetriever, DenseRetrievalItem
 from .base import BaseKnowledgeStore
-from .memory import cosine_similarity
 
 
 class KnowledgeBaseMongoModel(MongoDbModel):
@@ -180,6 +180,7 @@ class MongoKnowledgeStore(BaseKnowledgeStore):
         KnowledgeDocumentMongoModel.use_mongo_service(self.mongo_service)
         KnowledgeChunkMongoModel.use_mongo_service(self.mongo_service)
         KnowledgeEmbeddingMongoModel.use_mongo_service(self.mongo_service)
+        self.retriever = DenseRetriever()
 
     def create_knowledge_base(self, kb: KnowledgeBase) -> KnowledgeBase:
         """Creates a new knowledge base.
@@ -400,7 +401,7 @@ class MongoKnowledgeStore(BaseKnowledgeStore):
             Empty list if knowledge base is empty or has no chunks.
         """
         chunks = KnowledgeChunkMongoModel.find_many({"knowledge_base_id": kb_id})
-        results = []
+        items = []
         for chunk_model in chunks:
             embedding_model = KnowledgeEmbeddingMongoModel.find_one(
                 {"chunk_id": chunk_model.id},
@@ -408,18 +409,20 @@ class MongoKnowledgeStore(BaseKnowledgeStore):
             if embedding_model is None:
                 continue
 
-            score = cosine_similarity(query_embedding, embedding_model.embedding)
             chunk = self._model_to_chunk(chunk_model)
             doc_model = KnowledgeDocumentMongoModel.find_by_id(chunk.document_id)
             doc = self._model_to_doc(doc_model) if doc_model is not None else None
-            results.append(RetrievalResult(
+            items.append(DenseRetrievalItem(
                 chunk=chunk,
-                score=score,
+                embedding=embedding_model.embedding,
                 document=doc,
             ))
 
-        results.sort(key=lambda r: r.score, reverse=True)
-        return results[:top_k]
+        return self.retriever.retrieve(
+            query_embedding=query_embedding,
+            items=items,
+            top_k=top_k,
+        )
 
     def _kb_to_model(self, kb: KnowledgeBase) -> KnowledgeBaseMongoModel:
         """Converts a knowledge base DTO to a MongoDB model."""
