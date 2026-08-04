@@ -27,11 +27,11 @@ class RetrievalPipeline:
     candidate/final_k — the pipeline handles all of that.
 
     Attributes:
-        _store: Knowledge store backend.
-        _reranker: Post-retrieval reranker (defaults to ``NoOpReranker``).
-        _sparse_retriever: Sparse retriever used when
+        store: Knowledge store backend.
+        reranker: Post-retrieval reranker (defaults to ``NoOpReranker``).
+        sparse_retriever: Sparse retriever used when
             ``RetrievalOption.use_sparse`` is enabled.
-        _rank_fusion: RRF fusion combiner used when
+        rank_fusion: RRF fusion combiner used when
             ``RetrievalOption.use_hybrid`` is enabled.
     """
 
@@ -45,16 +45,16 @@ class RetrievalPipeline:
 
         Args:
             store: Knowledge store backend.
-            reranker: Optional post-retrieval reranker.  Defaults to
+            reranker: Optional post-retrieval reranker. Defaults to
                 ``NoOpReranker`` to preserve dense-only behaviour.
             sparse_retriever: Optional sparse retriever used when
-                ``RetrievalOption.use_sparse`` is enabled.  Defaults to a
+                ``RetrievalOption.use_sparse`` is enabled. Defaults to a
                 plain ``SparseRetriever``.
         """
-        self._store = store
-        self._reranker = reranker or NoOpReranker()
-        self._sparse_retriever = sparse_retriever or SparseRetriever()
-        self._rank_fusion = RankFusion()
+        self.store = store
+        self.reranker = reranker or NoOpReranker()
+        self.sparse_retriever = sparse_retriever or SparseRetriever()
+        self.rank_fusion = RankFusion()
 
     # -- public API ---------------------------------------------------------
 
@@ -93,7 +93,7 @@ class RetrievalPipeline:
                 raise ValueError(
                     "query_text is required when use_hybrid=True"
                 )
-            results = self._search_hybrid(
+            results = self.__search_hybrid(
                 kb_id, query_embedding, query_text, candidate_k
             )
         elif options.use_sparse:
@@ -101,9 +101,9 @@ class RetrievalPipeline:
                 raise ValueError(
                     "query_text is required when use_sparse=True"
                 )
-            results = self._search_sparse(kb_id, query_text, candidate_k)
+            results = self.__search_sparse(kb_id, query_text, candidate_k)
         else:
-            results = self._store.search(
+            results = self.store.search(
                 kb_id, query_embedding, top_k=candidate_k
             )
 
@@ -112,11 +112,11 @@ class RetrievalPipeline:
                 results, options.metadata_filter
             )
 
-        return self._reranker.rerank(query_text, results, options.top_k)
+        return self.reranker.rerank(query_text, results, options.top_k)
 
     # -- private helpers ----------------------------------------------------
 
-    def _search_hybrid(
+    def __search_hybrid(
         self,
         kb_id: str,
         query_embedding: List[float],
@@ -135,13 +135,13 @@ class RetrievalPipeline:
             Combined results fused via RRF, sorted by descending RRF
             score, limited to ``candidate_k``.
         """
-        dense = self._store.search(
+        dense = self.store.search(
             kb_id, query_embedding, top_k=candidate_k
         )
-        sparse = self._search_sparse(kb_id, query_text, candidate_k)
-        return self._rank_fusion.fuse(dense, sparse, top_k=candidate_k)
+        sparse = self.__search_sparse(kb_id, query_text, candidate_k)
+        return self.rank_fusion.fuse(dense, sparse, top_k=candidate_k)
 
-    def _search_sparse(
+    def __search_sparse(
         self,
         kb_id: str,
         query_text: str,
@@ -158,12 +158,12 @@ class RetrievalPipeline:
             Sparse retrieval results sorted by descending BM25 score.
         """
         items: List[SparseRetrievalItem] = []
-        for chunk in self._store.list_chunks(kb_id):
-            document = self._store.get_document(chunk.document_id)
+        for chunk in self.store.list_chunks(kb_id):
+            document = self.store.get_document(chunk.document_id)
             items.append(
                 SparseRetrievalItem(chunk=chunk, document=document)
             )
-        return self._sparse_retriever.retrieve(query_text, items, top_k)
+        return self.sparse_retriever.retrieve(query_text, items, top_k)
 
 
 # ---------------------------------------------------------------------------

@@ -148,8 +148,8 @@ class SparseRetriever:
         """
         self.k1 = k1
         self.b = b
-        self._stopwords: Set[str] = stopwords or _DEFAULT_STOPWORDS
-        self._tokenize = tokenizer
+        self.stopwords: Set[str] = stopwords or _DEFAULT_STOPWORDS
+        self.tokenizer = tokenizer
 
     # -- public API ---------------------------------------------------------
 
@@ -171,12 +171,12 @@ class SparseRetriever:
             no matching query terms are omitted.  Returns an empty list when
             ``items`` is empty or the query has no content-bearing tokens.
         """
-        query_terms = self._tokenize_and_filter(query)
+        query_terms = self.__tokenize_and_filter(query)
         if not query_terms or not items:
             return []
 
         tokenized_chunks = [
-            self._tokenize_and_filter(item.chunk.content) for item in items
+            self.__tokenize_and_filter(item.chunk.content) for item in items
         ]
         avg_length = sum(len(tokens) for tokens in tokenized_chunks) / len(items)
         doc_freq: Counter[str] = Counter()
@@ -185,7 +185,7 @@ class SparseRetriever:
 
         results: List[RetrievalResult] = []
         for item, tokens in zip(items, tokenized_chunks):
-            score = self._score(
+            score = self.__score(
                 query_terms, tokens, doc_freq, len(items), avg_length
             )
             if score <= 0.0:
@@ -204,14 +204,14 @@ class SparseRetriever:
 
     # -- private helpers ----------------------------------------------------
 
-    def _tokenize_and_filter(self, text: str) -> List[str]:
+    def __tokenize_and_filter(self, text: str) -> List[str]:
         """Tokenizes ``text`` then removes any configured stopwords."""
-        tokens = self._tokenize(text)
-        if not self._stopwords:
+        tokens = self.tokenizer(text)
+        if not self.stopwords:
             return tokens
-        return [t for t in tokens if t not in self._stopwords]
+        return [t for t in tokens if t not in self.stopwords]
 
-    def _score(
+    def __score(
         self,
         query_terms: List[str],
         document_terms: List[str],
