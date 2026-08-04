@@ -8,10 +8,13 @@
 @Contact:   https://github.com/SwordJack/
 """
 
-from .base import BaseChunker
+from .base import BaseChunker, ChunkSection
 from .fixed import FixedSizeChunker
+from .markdown import MarkdownChunker
 
 __all__ = [
     "BaseChunker",
+    "ChunkSection",
     "FixedSizeChunker",
+    "MarkdownChunker",
 ]

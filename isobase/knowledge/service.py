@@ -149,13 +149,13 @@ class KnowledgeBaseService:
         # Chunk text — the KB's stored values take precedence over
         # the chunker instance defaults so that each knowledge base
         # behaves according to its own recorded configuration.
-        chunk_texts = self.chunker.chunk(
+        chunk_sections = self.chunker.chunk(
             text,
             chunk_size=kb.chunk_size or None,
             chunk_overlap=kb.chunk_overlap if kb.chunk_overlap is not None else None,
         )
 
-        if not chunk_texts:
+        if not chunk_sections:
             # Empty document, nothing to index
             return doc
 
@@ -165,12 +165,12 @@ class KnowledgeBaseService:
                 id=str(uuid.uuid4()),
                 document_id=doc.id,
                 knowledge_base_id=knowledge_base_id,
-                content=chunk_text,
+                content=section.content,
                 index=idx,
-                token_count=len(chunk_text.split()),  # Rough approximation
-                metadata={},
+                token_count=len(section.content.split()),  # Rough approximation
+                metadata=section.metadata,
             )
-            for idx, chunk_text in enumerate(chunk_texts)
+            for idx, section in enumerate(chunk_sections)
         ]
         
         all_embeddings: List[List[float]] = []
