@@ -114,9 +114,9 @@ isobase/knowledge/
 ├── entities.py          # Core DTOs
 ├── chunking/
 │   ├── __init__.py
-│   ├── base.py         # BaseChunker ABC
+│   ├── base.py         # BaseChunker ABC + ChunkSection
 │   ├── fixed.py        # Fixed-size chunker
-│   └── recursive.py    # Recursive character splitter (Planned)
+│   └── markdown.py     # Markdown heading-aware chunker
 ├── embeddings/
 │   ├── __init__.py
 │   ├── base.py         # BaseEmbeddingClient ABC
@@ -364,22 +364,40 @@ class OpenAIEmbeddingClient(BaseEmbeddingClient):
 
 ```python
 from abc import ABC, abstractmethod
-from typing import List
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+
+@dataclass
+class ChunkSection:
+    """A text segment with metadata from the chunking process."""
+
+    content: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class BaseChunker(ABC):
     """Abstract chunker interface."""
 
     @abstractmethod
-    def chunk(self, text: str, **kwargs) -> List[str]:
+    def chunk(
+        self,
+        text: str,
+        *,
+        chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
+        **kwargs: Any,
+    ) -> List[ChunkSection]:
         """Splits text into chunks.
 
         Args:
             text: Input text to split.
-            **kwargs: Chunker-specific parameters.
+            chunk_size: Optional override for the chunker's default size.
+            chunk_overlap: Optional override for the chunker's default overlap.
+            **kwargs: Additional strategy-specific parameters.
 
         Returns:
-            List of text chunks.
+            List of chunk sections with content and metadata.
         """
         pass
 ```
@@ -387,8 +405,8 @@ class BaseChunker(ABC):
 **Fixed-size implementation (`chunking/fixed.py`):**
 
 ```python
-from typing import List
-from .base import BaseChunker
+from typing import List, Optional, Any
+from .base import BaseChunker, ChunkSection
 
 
 class FixedSizeChunker(BaseChunker):
@@ -404,26 +422,60 @@ class FixedSizeChunker(BaseChunker):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
 
-    def chunk(self, text: str, **kwargs) -> List[str]:
+    def chunk(
+        self,
+        text: str,
+        *,
+        chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
+        **kwargs: Any,
+    ) -> List[ChunkSection]:
         """Splits text into fixed-size chunks with overlap."""
         if not text:
             return []
 
-        chunks = []
+        size = chunk_size if chunk_size is not None else self.chunk_size
+        overlap = chunk_overlap if chunk_overlap is not None else self.chunk_overlap
+        chunks: List[ChunkSection] = []
         start = 0
         text_len = len(text)
 
         while start < text_len:
-            end = start + self.chunk_size
-            chunk = text[start:end]
-            chunks.append(chunk)
-
+            end = start + size
+            chunks.append(ChunkSection(
+                content=text[start:end],
+                metadata={"chunk_strategy": "fixed"},
+            ))
             if end >= text_len:
                 break
-
-            start = end - self.chunk_overlap
+            start = end - overlap
 
         return chunks
+```
+
+**Markdown-aware implementation (`chunking/markdown.py`):**
+
+```python
+class MarkdownChunker(BaseChunker):
+    """Markdown structure-aware chunker.
+
+    Splits by ATX headings first (preserving heading_path),
+    then falls back to fixed-size splitting for oversized sections.
+    """
+
+    def chunk(self, text, *, chunk_size=None, chunk_overlap=None, **kwargs):
+        """Returns chunks with heading_path and chunk_strategy metadata."""
+        ...
+        return [
+            ChunkSection(
+                content=...,
+                metadata={
+                    "chunk_strategy": "markdown",
+                    "heading_path": ["Chapter 1", "1.1 Overview"],
+                },
+            ),
+            ...
+        ]
 ```
 
 ### 4.5 Knowledge Store (`stores/base.py`)
@@ -696,20 +748,27 @@ class KnowledgeBaseService:
         doc = self.store.add_document(doc)
 
         # Chunk text
-        chunk_texts = self.chunker.chunk(text)
+        chunk_sections = self.chunker.chunk(
+            text,
+            chunk_size=kb.chunk_size or None,
+            chunk_overlap=kb.chunk_overlap if kb.chunk_overlap is not None else None,
+        )
 
-        # Create chunk records
+        if not chunk_sections:
+            return doc
+
+        # Create chunk records, preserving chunker-provided metadata
         chunks = [
             KnowledgeChunk(
                 id=str(uuid.uuid4()),
                 document_id=doc.id,
                 knowledge_base_id=knowledge_base_id,
-                content=chunk_text,
+                content=section.content,
                 index=idx,
-                token_count=len(chunk_text.split()),
-                metadata={},
+                token_count=len(section.content.split()),
+                metadata=section.metadata,
             )
-            for idx, chunk_text in enumerate(chunk_texts)
+            for idx, section in enumerate(chunk_sections)
         ]
 
         # Embed chunks in batches to respect provider limits
@@ -893,26 +952,44 @@ def create_knowledge_search_tool(
 - Concurrent writes don't corrupt data
 - Search performance acceptable for 1K-10K chunks
 
-### Phase 3: Markdown Structure-Aware Chunking
+### Phase 3: Markdown Structure-Aware Chunking ✅ (completed)
 
 **Goal:** Improve retrieval quality by preserving Markdown structure during chunking.
 
-**Scope:**
+**Completed:**
 
-1. `chunking/base.py` - Add `ChunkSection(content, metadata)` return type
-2. `chunking/fixed.py` - Adapt fixed chunker to return `ChunkSection`
-3. `chunking/markdown.py` - Markdown heading-aware chunker
-4. `isobase/utils/markdown_fixer.py` - Markdown normalization and front matter extraction
-5. `service.py` - Preserve chunk metadata such as `heading_path` and `chunk_strategy`
+1. ✅ `chunking/base.py` — `ChunkSection(content, metadata)` return type, `BaseChunker.chunk() → List[ChunkSection]`
+2. ✅ `chunking/fixed.py` — Fixed chunker returns `ChunkSection` with `chunk_strategy: "fixed"`
+3. ✅ `chunking/markdown.py` — `MarkdownChunker`: ATX heading-aware splitter with `heading_path` tracking
+4. ✅ `isobase/utils/markdown_fixer.py` — `MarkdownFixer`: normalize + extract_front_matter
+5. ✅ `service.py` — `section.content` / `section.metadata` wired into `KnowledgeChunk`
+6. ✅ `test/knowledge/test_markdown_chunking.py` — 6 unit tests
+7. ✅ `test/utils/test_markdown_fixer.py` — 36 unit tests
+8. ✅ `test/knowledge/live/run_markdown_chunking.py` — live smoke test (MongoDB + DashScope)
 
-**Explicitly deferred:** BM25, RRF, rerank, parser directory, PDF/URL ingestion, async indexing, pgvector, FAISS.
+**Key design decisions:**
 
-**Validation criteria:**
+| Aspect          | Decision                                                                            |
+| --------------- | ----------------------------------------------------------------------------------- |
+| Location        | `chunking/markdown.py` (chunking strategy, not parser)                              |
+| `chunk_size`    | Upper bound, not target — short sections are never merged across heading boundaries |
+| `chunk_overlap` | Applies within a heading section only; sections are hard semantic boundaries        |
+| Large sections  | Delegates to `FixedSizeChunker` for character-level splitting                       |
+| Normalization   | Delegates to `MarkdownFixer.normalize()` before splitting                           |
 
-- Markdown chunks preserve heading path metadata
-- Oversized Markdown sections still respect chunk size / overlap rules
-- Existing fixed-size chunking behavior remains compatible through `ChunkSection`
-- `KnowledgeBaseService` stores chunker-provided metadata on `KnowledgeChunk`
+**Module structure after Phase 3:**
+
+```
+isobase/knowledge/chunking/
+├── __init__.py      # exports BaseChunker, ChunkSection, FixedSizeChunker, MarkdownChunker
+├── base.py          # BaseChunker ABC + ChunkSection dataclass
+├── fixed.py         # FixedSizeChunker
+└── markdown.py      # MarkdownChunker (ATX heading-aware)
+
+isobase/utils/
+├── json_fixer.py        # existing
+└── markdown_fixer.py    # MarkdownFixer (normalize + extract_front_matter)
+```
 
 ### Phase 4: Retrieval Enhancement
 
@@ -1269,13 +1346,17 @@ def test_fixed_chunker_no_overlap():
     chunker = FixedSizeChunker(chunk_size=10, chunk_overlap=0)
     text = "0123456789abcdefghij"
     chunks = chunker.chunk(text)
-    assert chunks == ["0123456789", "abcdefghij"]
+    assert len(chunks) == 2
+    assert chunks[0].content == "0123456789"
+    assert chunks[1].content == "abcdefghij"
+    assert chunks[0].metadata == {"chunk_strategy": "fixed"}
 
 def test_fixed_chunker_with_overlap():
     chunker = FixedSizeChunker(chunk_size=10, chunk_overlap=3)
     text = "0123456789abcdefghij"
     chunks = chunker.chunk(text)
-    assert chunks[1].startswith("789")  # Overlap from previous chunk
+    assert len(chunks) == 3
+    assert chunks[1].content.startswith("789")  # Overlap from previous chunk
 ```
 
 **Test embedding client (mock API):**
@@ -1510,10 +1591,11 @@ def test_e2e_index_and_retrieve():
 
 ### Phase 3 (Markdown Chunking) Success Criteria
 
-- [ ] Markdown chunks preserve heading path metadata
-- [ ] Oversized Markdown sections respect chunk size / overlap rules
-- [ ] All Phase 1/2 tests pass with `ChunkSection` return type
-- [ ] `KnowledgeBaseService` stores chunker-provided metadata on `KnowledgeChunk`
+- [x] Markdown chunks preserve heading path metadata
+- [x] Oversized Markdown sections respect chunk size / overlap rules
+- [x] All Phase 1/2 tests pass with `ChunkSection` return type
+- [x] `KnowledgeBaseService` stores chunker-provided metadata on `KnowledgeChunk`
+- [x] Live smoke test verified (MongoDB + DashScope, 49 chunks from 15 heading sections)
 
 ### Phase 4 (Retrieval Enhancement) Success Criteria
 
