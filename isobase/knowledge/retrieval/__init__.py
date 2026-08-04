@@ -10,10 +10,30 @@
 
 from .base import BaseRetriever, DenseRetrievalItem
 from .dense import DenseRetriever, cosine_similarity
+from .pipeline import RetrievalPipeline
+from .rank_fusion import FusedResult, RankFusion
+from .reranker import BaseReranker, NoOpReranker
+from .sparse import (
+    SparseRetrievalItem,
+    SparseRetriever,
+    curated_stopwords,
+    load_stopwords,
+    tokenize_text,
+)
 
 __all__ = [
     "BaseRetriever",
     "DenseRetrievalItem",
     "DenseRetriever",
     "cosine_similarity",
+    "FusedResult",
+    "RankFusion",
+    "RetrievalPipeline",
+    "BaseReranker",
+    "NoOpReranker",
+    "SparseRetrievalItem",
+    "SparseRetriever",
+    "curated_stopwords",
+    "load_stopwords",
+    "tokenize_text",
 ]

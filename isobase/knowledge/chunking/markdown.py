@@ -113,8 +113,15 @@ class MarkdownChunker(BaseChunker):
         current_lines: List[str] = []
         current_path: List[str] = []
 
+        in_fence = False
+
         for line in text.splitlines():
-            match = cls._HEADING_RE.match(line)
+            if MarkdownFixer.is_fence_line(line):
+                in_fence = not in_fence
+                current_lines.append(line)
+                continue
+
+            match = cls._HEADING_RE.match(line) if not in_fence else None
             if match:
                 cls._append_section(sections, current_lines, current_path)
                 level = len(match.group(1))

@@ -164,6 +164,8 @@ print(resp.content)            # 最终回答
 - `AnthropicMessages` provider：非流式、流式、多轮工具调用、多模态图像输入、扩展思考、顶层 `system`、必填 `max_tokens`，以及对发送 `message_start.content: null` 的兼容网关的健壮处理。
 - 中立 `FunctionTool`，含 OpenAI/Anthropic schema 双向转化与共享的执行核（`ToolSet.execute_tool_calls` / `execute_tool_calls_anthropic`）。
 - 通过 `isobase.llm.tools.knowledge.create_knowledge_search_tool` 集成知识库检索工具。
+- `SearchTool` 双引擎架构联网搜索（原生提供商搜索 + 自定义搜索引擎回退 `TavilySearchProvider` / `BraveSearchProvider`）。
+- `BaseLLMCallback` — 执行回调钩子，可实时追踪工具执行进度。
 - 对各 SDK 打桩的单元测试（`test/llm/providers/`），以及一个手动真实联调脚本（`test/llm/live/`）。
 
 ### 尚未完成（以后做）
