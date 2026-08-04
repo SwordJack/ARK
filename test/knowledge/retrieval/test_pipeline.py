@@ -288,3 +288,89 @@ def test_pipeline_default_dense_unchanged():
     assert len(results) == 3
     assert results[0].chunk.id == "c0"
     assert results[0].score_source == "dense"
+
+
+# ---- Hybrid retrieval (RRF fusion) ----------------------------------------
+
+def test_pipeline_hybrid_basic():
+    """Hybrid retrieval fuses dense + sparse via RRF."""
+    store = _seed_store()
+    pipeline = RetrievalPipeline(store)
+    query_embedding = [10.0, 0.0]  # dense: c0 top
+
+    results = pipeline.search(
+        "kb1",
+        query_embedding,
+        RetrievalOption(top_k=3, use_hybrid=True),
+        query_text="chunk 1",
+    )
+    assert len(results) >= 1
+    assert results[0].score_source == "fused"
+    # Scores are RRF values — all > 0
+    for r in results:
+        assert r.score > 0.0
+
+
+def test_pipeline_hybrid_no_query_text_raises():
+    """Hybrid mode requires query_text."""
+    store = _seed_store()
+    pipeline = RetrievalPipeline(store)
+
+    with pytest.raises(ValueError, match="query_text is required"):
+        pipeline.search(
+            "kb1",
+            [10.0, 0.0],
+            RetrievalOption(use_hybrid=True),
+        )
+
+
+def test_pipeline_hybrid_empty_kb():
+    """Hybrid retrieval on empty KB returns empty list."""
+    store = MemoryKnowledgeStore()
+    pipeline = RetrievalPipeline(store)
+
+    results = pipeline.search(
+        "nonexistent",
+        [10.0, 0.0],
+        RetrievalOption(use_hybrid=True),
+        query_text="hello",
+    )
+    assert results == []
+
+
+def test_pipeline_hybrid_metadata_filter():
+    """Metadata filter works with hybrid retrieval."""
+    store = _seed_store()
+    pipeline = RetrievalPipeline(store)
+
+    results = pipeline.search(
+        "kb1",
+        [10.0, 0.0],
+        RetrievalOption(
+            top_k=5, use_hybrid=True, metadata_filter={"key": "val0"}
+        ),
+        query_text="chunk",
+    )
+    assert len(results) == 1
+    assert results[0].chunk.id == "c0"
+    assert results[0].score_source == "fused"
+
+
+def test_pipeline_hybrid_consistency():
+    """A chunk in both dense and sparse legs gets a higher RRF score."""
+    store = _seed_store()
+    pipeline = RetrievalPipeline(store)
+    # Query embedding aligns with c0 (val=10.0) — dense rank 1.
+    # Query text "chunk 0" matches c0 content — sparse rank 1.
+    # c0 should appear in both legs and therefore gets the best RRF score.
+    query_embedding = [10.0, 0.0]
+
+    results = pipeline.search(
+        "kb1",
+        query_embedding,
+        RetrievalOption(top_k=5, use_hybrid=True),
+        query_text="chunk 0",
+    )
+    assert len(results) >= 1
+    assert results[0].chunk.id == "c0"
+    assert results[0].score_source == "fused"

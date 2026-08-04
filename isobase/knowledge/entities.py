@@ -25,12 +25,16 @@ class RetrievalOption:
             metadata contains all key/value pairs are retained.
         use_sparse: Whether to use sparse text retrieval instead of dense
             vector retrieval. Defaults to False to preserve dense-only behavior.
+        use_hybrid: Whether to run dense + sparse dual retrieval and fuse
+            results via Reciprocal Rank Fusion (RRF). Defaults to False.
+            When True, ``query_text`` is required.
     """
 
     top_k: int = 5
     candidate_k: Optional[int] = None
     metadata_filter: Dict[str, Any] = field(default_factory=dict)
     use_sparse: bool = False
+    use_hybrid: bool = False
 
     def effective_candidate_k(self) -> int:
         """Returns the candidate count to use for the initial retrieval pass."""

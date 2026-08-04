@@ -19,6 +19,10 @@ from typing import Callable, Dict, List, Optional, Set
 from ..entities import KnowledgeChunk, KnowledgeDocument, RetrievalResult
 
 
+# ---------------------------------------------------------------------------
+# Data types
+# ---------------------------------------------------------------------------
+
 @dataclass
 class SparseRetrievalItem:
     """A stored chunk available for sparse text retrieval.
@@ -32,12 +36,16 @@ class SparseRetrievalItem:
     document: Optional[KnowledgeDocument] = None
 
 
+#: Type alias for a pluggable tokenizer — ``(str) -> list[str]``.
+Tokenizer = Callable[[str], List[str]]
+
+
 # ---------------------------------------------------------------------------
-# Tokenizer
+# Module-private tokenizer helpers
 # ---------------------------------------------------------------------------
 
-#: Default tokenizer strips Unicode word characters.  Suitable for English
-#: and languages without morphological splitting requirements.
+#: Compiled regex that matches Unicode word-char runs.  Suitable for English
+#: and languages without morphological segmentation requirements.
 _WORD_PATTERN: re.Pattern = re.compile(r"\w+", re.UNICODE)
 
 
@@ -46,18 +54,27 @@ def _default_tokenizer(text: str) -> List[str]:
     return _WORD_PATTERN.findall(text.lower())
 
 
-# Signature of a pluggable tokenizer.
-Tokenizer = Callable[[str], List[str]]
+# ---------------------------------------------------------------------------
+# Module-private stopword helpers
+# ---------------------------------------------------------------------------
+
+_DEFAULT_STOPWORDS: frozenset = frozenset()
+
+
+#: Filesystem path to the curated stopword list shipped with IsoBase.
+_CURATED_STOPWORDS_PATH: str = os.path.join(
+    os.path.dirname(__file__), "providers", "stopwords.txt"
+)
+
+#: Lazily-initialised cache for :func:`curated_stopwords`.
+_CURATED_STOPWORDS_CACHE: Optional[frozenset] = None
 
 
 # ---------------------------------------------------------------------------
-# Stopwords
+# Public stopword API
 # ---------------------------------------------------------------------------
 
-DEFAULT_STOPWORDS: Set[str] = frozenset()
-
-
-def load_stopwords(path: str) -> Set[str]:
+def load_stopwords(path: str) -> frozenset:
     """Loads stopwords from a text file (one word per line).
 
     Blank lines and lines whose first non-whitespace character is ``#`` are
@@ -67,7 +84,7 @@ def load_stopwords(path: str) -> Set[str]:
         path: Path to the stopwords file.
 
     Returns:
-        A ``frozenset`` of stopwords suitable for passing to
+        A ``frozenset`` of lower-cased stopwords suitable for passing to
         :class:`SparseRetriever`.
     """
     with Path(path).open(encoding="utf-8") as fh:
@@ -80,20 +97,20 @@ def load_stopwords(path: str) -> Set[str]:
     return frozenset(words)
 
 
-#: Pre-built stopwords from the curated dictionary shipped with the package.
-_CURATED_PATH = os.path.join(os.path.dirname(__file__), "providers", "stopwords.txt")
-_CURATED_STOPWORDS: Optional[Set[str]] = None
-
-
-def curated_stopwords() -> Set[str]:
+def curated_stopwords() -> frozenset:
     """Returns the curated stopword set shipped with IsoBase.
 
-    Loaded lazily on first call; subsequent calls return the cached set.
+    Loaded lazily on first call; subsequent calls return the cached
+    ``frozenset``.
+
+    Returns:
+        A ``frozenset`` of lower-cased stopwords covering English and
+        Chinese function words.
     """
-    global _CURATED_STOPWORDS
-    if _CURATED_STOPWORDS is None:
-        _CURATED_STOPWORDS = load_stopwords(_CURATED_PATH)
-    return _CURATED_STOPWORDS
+    global _CURATED_STOPWORDS_CACHE
+    if _CURATED_STOPWORDS_CACHE is None:
+        _CURATED_STOPWORDS_CACHE = load_stopwords(_CURATED_STOPWORDS_PATH)
+    return _CURATED_STOPWORDS_CACHE
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +122,10 @@ class SparseRetriever:
 
     The retriever is provider-neutral — it works on any in-memory
     :class:`SparseRetrievalItem` list regardless of the backing store.
+
+    Attributes:
+        k1: Term-frequency saturation parameter.
+        b: Document-length normalization parameter.
     """
 
     def __init__(
@@ -114,23 +135,23 @@ class SparseRetriever:
         stopwords: Optional[Set[str]] = None,
         tokenizer: Tokenizer = _default_tokenizer,
     ) -> None:
-        """Initializes BM25 parameters and tokenizer.
+        """Initialises BM25 parameters and tokenizer.
 
         Args:
-            k1: Term-frequency saturation parameter.
-            b: Document-length normalization parameter.
-            stopwords: Stopwords to exclude during tokenization. When None,
-                no stopword filtering is applied.
-            tokenizer: Tokenizer callable ``(str) -> List[str]``. Defaults to
-                a simple Unicode word splitter. Inject ``jieba.cut`` or a
+            k1: Term-frequency saturation parameter (default ``1.5``).
+            b: Document-length normalisation parameter (default ``0.75``).
+            stopwords: Stopwords to exclude during tokenization. When
+                ``None`` (the default), no stopword filtering is applied.
+            tokenizer: Tokenizer callable ``(str) -> list[str]``.  Defaults
+                to a simple Unicode word splitter.  Inject ``jieba.cut`` or a
                 custom tokenizer for CJK support.
         """
         self.k1 = k1
         self.b = b
-        self._stopwords: Set[str] = stopwords or frozenset()
+        self._stopwords: Set[str] = stopwords or _DEFAULT_STOPWORDS
         self._tokenize = tokenizer
 
-    # ---- public API -------------------------------------------------------
+    # -- public API ---------------------------------------------------------
 
     def retrieve(
         self,
@@ -142,18 +163,21 @@ class SparseRetriever:
 
         Args:
             query: Query text.
-            items: Candidate chunks.
-            top_k: Maximum number of results to return.
+            items: Candidate chunks to score.
+            top_k: Maximum number of results to return. Defaults to ``5``.
 
         Returns:
-            Retrieval results sorted by descending BM25 score. Chunks with no
-            matching query terms are omitted.
+            Retrieval results sorted by descending BM25 score.  Chunks with
+            no matching query terms are omitted.  Returns an empty list when
+            ``items`` is empty or the query has no content-bearing tokens.
         """
         query_terms = self._tokenize_and_filter(query)
         if not query_terms or not items:
             return []
 
-        tokenized_chunks = [self._tokenize_and_filter(item.chunk.content) for item in items]
+        tokenized_chunks = [
+            self._tokenize_and_filter(item.chunk.content) for item in items
+        ]
         avg_length = sum(len(tokens) for tokens in tokenized_chunks) / len(items)
         doc_freq: Counter[str] = Counter()
         for tokens in tokenized_chunks:
@@ -161,23 +185,27 @@ class SparseRetriever:
 
         results: List[RetrievalResult] = []
         for item, tokens in zip(items, tokenized_chunks):
-            score = self._score(query_terms, tokens, doc_freq, len(items), avg_length)
+            score = self._score(
+                query_terms, tokens, doc_freq, len(items), avg_length
+            )
             if score <= 0.0:
                 continue
-            results.append(RetrievalResult(
-                chunk=item.chunk,
-                score=score,
-                document=item.document,
-                score_source="sparse",
-            ))
+            results.append(
+                RetrievalResult(
+                    chunk=item.chunk,
+                    score=score,
+                    document=item.document,
+                    score_source="sparse",
+                )
+            )
 
         results.sort(key=lambda r: r.score, reverse=True)
         return results[:top_k]
 
-    # ---- internals --------------------------------------------------------
+    # -- private helpers ----------------------------------------------------
 
     def _tokenize_and_filter(self, text: str) -> List[str]:
-        """Tokenizes then removes stopwords."""
+        """Tokenizes ``text`` then removes any configured stopwords."""
         tokens = self._tokenize(text)
         if not self._stopwords:
             return tokens
@@ -191,17 +219,18 @@ class SparseRetriever:
         document_count: int,
         avg_length: float,
     ) -> float:
-        """Computes BM25 score for one tokenized document.
+        """Computes BM25 score for a single tokenized document.
 
         Args:
             query_terms: Tokenized query terms.
             document_terms: Tokenized document terms.
             doc_freq: Number of documents containing each term.
-            document_count: Total number of documents.
+            document_count: Total number of documents in the corpus.
             avg_length: Average token length across documents.
 
         Returns:
-            BM25 relevance score.
+            BM25 relevance score.  Returns ``0.0`` when ``document_terms``
+            is empty or ``avg_length`` is zero.
         """
         if not document_terms or avg_length == 0.0:
             return 0.0
@@ -213,9 +242,11 @@ class SparseRetriever:
             if frequency == 0:
                 continue
 
-            # Smooth IDF: log((N - df + 0.5) / (df + 0.5) + 1)
+            # Smooth IDF: log(1 + (N - df + 0.5) / (df + 0.5))
             idf = math.log(
-                1.0 + (document_count - doc_freq[term] + 0.5) / (doc_freq[term] + 0.5),
+                1.0
+                + (document_count - doc_freq[term] + 0.5)
+                / (doc_freq[term] + 0.5),
             )
             denominator = frequency + self.k1 * (
                 1.0 - self.b + self.b * len(document_terms) / avg_length
@@ -226,12 +257,14 @@ class SparseRetriever:
 
 
 # ---------------------------------------------------------------------------
-# Convenience — keep the old module-level tokenize_text for users who already
-# import it.
+# Convenience re-export
 # ---------------------------------------------------------------------------
 
 def tokenize_text(text: str) -> List[str]:
-    """Tokenizes text for lightweight sparse retrieval.
+    """Tokenizes text using the default Unicode word splitter.
+
+    This is a module-level convenience for users who only need tokenization
+    without the full BM25 scorer.
 
     Args:
         text: Text to tokenize.
