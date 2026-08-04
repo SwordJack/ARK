@@ -135,7 +135,41 @@ class MyCallback(BaseLLMCallback):
 resp = client.ask("Search for Kyoto weather.", callbacks=[MyCallback()])
 ```
 
-### 7. Multimodal (Images)
+### 7. Provider-Neutral Message History
+
+Save conversation history in a neutral format and transfer it between providers.
+
+```python
+from isobase.llm import (
+    AnthropicMessages, OpenAIChat,
+    LLMMessage, LLMMessageHistory, MessageContentBlock, ToolCall,
+)
+
+# Build a neutral history
+history = LLMMessageHistory()
+history.append(LLMMessage(role="user", content="Weather in Paris?"))
+history.append(LLMMessage(role="assistant", content=[
+    MessageContentBlock(type="tool_use",
+        tool_call=ToolCall(id="c1", name="get_weather", arguments='{"city":"Paris"}')),
+]))
+
+# Save to JSON
+saved = history.to_list()
+
+# Reload and use with OpenAI
+reloaded = LLMMessageHistory.from_list(saved)
+openai = OpenAIChat(api_key="sk-...")
+oai_msgs = [OpenAIChat.from_neutral_message(m) for m in reloaded.messages]
+resp = openai.ask("Based on that tool call, answer me.", stream=False)
+
+# Switch to Anthropic (system prompt extracted automatically)
+anthropic = AnthropicMessages(api_key="sk-ant-...")
+ant_msgs, system_prompt = AnthropicMessages.from_neutral_history(reloaded)
+anthropic.instructions = system_prompt
+resp = anthropic.ask("Based on that tool call, answer me.", stream=False)
+```
+
+### 8. Multimodal (Images)
 
 ```python
 from PIL import Image
@@ -148,7 +182,7 @@ messages = [
 resp = client.generate(messages=messages)
 ```
 
-### 8. Extended Thinking (Anthropic)
+### 9. Extended Thinking (Anthropic)
 
 ```python
 client = AnthropicMessages(
@@ -160,7 +194,7 @@ print(resp.reasoning_content)  # model's chain-of-thought
 print(resp.content)            # final answer
 ```
 
-### 9. Knowledge Base (RAG)
+### 10. Knowledge Base (RAG)
 
 Search your indexed private documents during conversations.
 
@@ -215,6 +249,9 @@ For advanced retrieval modes (sparse / hybrid / rerank), see [Knowledge Base Qui
 | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `LLMResponse`     | `.content: str`, `.tool_calls: list[ToolCall]`, `.reasoning_content: str`, `.usage: TokenUsage`, `.success: bool` |
 | `ToolCall`        | Neutral tool-call representation (vendor-independent)                                                             |
+| `LLMMessage`      | Provider-neutral message; supports `system` / `user` / `assistant` / `tool` roles                                |
+| `MessageContentBlock` | Provider-neutral content block (`text` / `image` / `tool_use` / `tool_result` / `raw`)                       |
+| `LLMMessageHistory`  | Serializable list of neutral messages; `to_list()` / `from_list()` for JSON persistence                      |
 | `FunctionTool`    | Wraps a Python callable into an LLM tool                                                                          |
 | `ToolSet`         | Collection of tools; `.execute_tool_calls()` runs them                                                            |
 | `BaseLLMCallback` | Hook interface for tool execution progress                                                                        |
@@ -237,6 +274,10 @@ python -m pytest test/llm/ -v
 # Copy .env.example → .env, fill in credentials, then:
 python -m test.llm.live.run_llm_basic
 # Prerequisites: OpenAI-compatible API key in .env
+
+# Message conversion live test
+python -m test.llm.live.run_message_conversion
+# Prerequisites: .env with OPENAI_CHAT_API_KEY and ANTHROPIC_MESSAGES_API_KEY
 
 # Knowledge-base agent live test
 python -m test.llm.live.run_agent_knowledge

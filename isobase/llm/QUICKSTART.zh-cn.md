@@ -138,7 +138,41 @@ class MyCallback(BaseLLMCallback):
 resp = client.ask("搜索京都的天气。", callbacks=[MyCallback()])
 ```
 
-### 7. 多模态（图像输入）
+### 7. 厂商中立的消息历史
+
+保存对话历史为厂商中立格式，并可在不同 provider 之间转移。
+
+```python
+from isobase.llm import (
+    AnthropicMessages, OpenAIChat,
+    LLMMessage, LLMMessageHistory, MessageContentBlock, ToolCall,
+)
+
+# 构建中立历史
+history = LLMMessageHistory()
+history.append(LLMMessage(role="user", content="巴黎天气怎么样？"))
+history.append(LLMMessage(role="assistant", content=[
+    MessageContentBlock(type="tool_use",
+        tool_call=ToolCall(id="c1", name="get_weather", arguments='{"city":"Paris"}')),
+]))
+
+# 保存为 JSON
+saved = history.to_list()
+
+# 重新加载并在 OpenAI 上使用
+reloaded = LLMMessageHistory.from_list(saved)
+openai = OpenAIChat(api_key="sk-...")
+oai_msgs = [OpenAIChat.from_neutral_message(m) for m in reloaded.messages]
+resp = openai.ask("结合刚才的工具调用结果回答我。", stream=False)
+
+# 切换到 Anthropic（system 自动提取至顶层参数）
+anthropic = AnthropicMessages(api_key="sk-ant-...")
+ant_msgs, system_prompt = AnthropicMessages.from_neutral_history(reloaded)
+anthropic.instructions = system_prompt
+resp = anthropic.ask("结合刚才的工具调用结果回答我。", stream=False)
+```
+
+### 8. 多模态（图像输入）
 
 ```python
 from PIL import Image
@@ -151,7 +185,7 @@ messages = [
 resp = client.generate(messages=messages)
 ```
 
-### 8. 扩展思考（Anthropic）
+### 9. 扩展思考（Anthropic）
 
 ```python
 client = AnthropicMessages(
@@ -163,7 +197,7 @@ print(resp.reasoning_content)  # 模型的思维链
 print(resp.content)            # 最终回答
 ```
 
-### 9. 知识库 (RAG)
+### 10. 知识库 (RAG)
 
 在对话中搜索你已索引的私有文档。
 
@@ -218,6 +252,9 @@ toolset.add_tool(create_knowledge_search_tool(
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `LLMResponse`     | `.success: bool`、`.status_code: int`、`.content: str`、`.role: str`、`.tool_calls: list[ToolCall]`、`.reasoning_content: str`、`.usage: TokenUsage` |
 | `ToolCall`        | 厂商中立的工具调用表示                                                                                                                               |
+| `LLMMessage`      | 厂商中立的消息；支持 `system` / `user` / `assistant` / `tool` 角色                                                                                |
+| `MessageContentBlock` | 厂商中立的内容块（`text` / `image` / `tool_use` / `tool_result` / `raw`）                                                                      |
+| `LLMMessageHistory`  | 可序列化的中立消息列表；`to_list()` / `from_list()` 用于 JSON 持久化                                                                              |
 | `FunctionTool`    | 将 Python 可调用对象包装为 LLM 工具；自动从签名和 Docstring 提取 schema                                                                              |
 | `ToolSet`         | 工具集合；`.execute_tool_calls()` 执行工具调用                                                                                                       |
 | `BaseLLMCallback` | 工具执行进度回调钩子（`on_tool_start` / `on_tool_end`）                                                                                              |
@@ -240,6 +277,10 @@ python -m pytest test/llm/ -v
 # 复制 .env.example → .env，填入凭据后运行：
 python -m test.llm.live.run_llm_basic
 # 运行条件：.env 中配置 OpenAI 兼容 API 密钥
+
+# 消息转换联调测试
+python -m test.llm.live.run_message_conversion
+# 运行条件：.env 中配置 OPENAI_CHAT_API_KEY 和 ANTHROPIC_MESSAGES_API_KEY
 
 # 知识库 Agent 联调测试
 python -m test.llm.live.run_agent_knowledge
