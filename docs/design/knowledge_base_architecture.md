@@ -19,6 +19,7 @@ This document outlines the architectural design for adding RAG (Retrieval-Augmen
 - Hybrid retrieval: dense (FAISS) + sparse (BM25) + fusion (RRF) + rerank
 - SQLite for metadata, separate vector storage
 - Clean abstraction: `RetrievalManager` coordinates all retrieval strategies
+- IsoBase Phase 4 now offers an equivalent hybrid pipeline (dense + BM25 + RRF + rerank) without external dependencies
 
 **Key files reviewed:**
 
@@ -1003,7 +1004,7 @@ isobase/utils/
 
 **Rationale:** AstrBot's retrieval layer combines FAISS dense retrieval, FTS5/BM25 sparse retrieval, RRF fusion, and optional rerank. That is a useful reference, but it is a larger architecture phase than Markdown chunking. IsoBase should keep dense-only retrieval as the default while designing the interfaces needed for optional enhancements.
 
-**Status:** ✅ 4A–4D completed. 4E (vector index backends) remains as future work.
+**Status:** ✅ 4A–4E completed (4A–4D implemented, 4E evaluated). 4F (vector index implementation) is a performance enhancement deferred to a future release — it does not block Phase 4 completion.
 
 **Completed (4A — Retrieval options / pipeline):**
 
@@ -1031,9 +1032,28 @@ isobase/utils/
 
 **Remaining (4E — Vector index backends):**
 
-1. [ ] Evaluate pgvector for PostgreSQL
-2. [ ] Evaluate MongoDB Atlas Vector Search
-3. [ ] Evaluate FAISS as local-file performance backend
+Evaluation below — each backend scored on provider neutrality, build cost, operational cost, and fit with IsoBase's
+current architecture.
+
+| Dimension                               | pgvector (PostgreSQL)                                                                                                          | MongoDB Atlas Vector Search                                                                                             | FAISS (local file-based)                                                                       |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **Provider neutrality**                 | ✅ Vendor-neutral PG extension, self-hosted                                                                                    | ❌ Proprietary Atlas cloud feature only                                                                                 | ✅ Fully local, zero vendor lock-in                                                            |
+| **Build cost**                          | Medium — needs `CREATE EXTENSION vector`, HNSW index DDL, optional Alembic migration for JSON→vector column                    | High — requires Atlas cluster, index definition in cloud UI/API, separate MongoDB connection management                 | Low — `pip install faiss-cpu`, one extra file per KB, no schema changes                        |
+| **Operational cost**                    | Low — same PG node, index maintenance is `REINDEX` (rarely needed)                                                             | Medium — Atlas pricing per GB + per query, index rebuilds on data change                                                | Low — pure local file, no server; index written once per KB rebuild                            |
+| **Search latency (10K chunks)**         | <10ms HNSW; 50-100ms IVFFlat                                                                                                   | <10ms with Atlas ANN index                                                                                              | <5ms with `IndexFlatIP` brute-force (GPU accelerated on faiss-gpu)                             |
+| **Filtering**                           | SQL `WHERE metadata_filter` + vector distance in same query                                                                    | Atlas `$vectorSearch` with `filter` clause                                                                              | Post-filter in Python after FAISS top-K (or use `IndexIDMap` + pre-filter)                     |
+| **Alignment with current architecture** | Strong — SQL store already uses SQLAlchemy + PostgreSQL; pgvector is a natural progression of the existing JSON-embedding path | Weak — community MongoDB has no vector index; only Atlas cloud tier supports it, breaking the "local development" story | Moderate — works best as a standalone `search()` backend alongside existing SQL metadata store |
+| **IsoBase's current stack fit**         | ⭐ Best — drop-in upgrade for `SqlKnowledgeStore.search()`                                                                     | ❌ Poor — requires cloud-only Atlas dependency, contradicts current local-first store contract                          | Good — ideal for high-scale local / on-prem deployments                                        |
+| **Recommended action**                  | **Implement** (`stores/pgvector.py` or `search()` path switch)                                                                 | **Defer** — narrow use case; revisit when Atlas is a stated deployment target                                           | **Implement** as lightweight standalone backend (`stores/faiss.py`)                            |
+
+**Decision:**
+
+1. **pgvector — approach first.** It is the natural evolution of the existing `SqlKnowledgeStore`: change the `embeddings` column from JSON text to `vector(N)` with an HNSW index. The `search()` method switches from `cosine_similarity()` in Python to `<=>` operator in SQL. No new service, no new config surface beyond the DDL migration.
+2. **FAISS — implement as a lightweight local backend.** `FaissKnowledgeStore` wraps `faiss.IndexFlatIP` and writes the index to disk. Useful for scenarios where PostgreSQL is unavailable (pure SQLite deployments) or when sub-millisecond latency is required on 100K+ chunks.
+3. **MongoDB Atlas Vector Search — defer.** The current Mongo store (`MongoKnowledgeStore`) targets the community edition (local development with `mongod`). Atlas Vector Search is a cloud-only feature incompatible with that story. Revisit when/if Atlas is a documented deployment target.
+
+**Implementation note:** These are performance enhancements, not semantic requirements. The current Python-side cosine similarity path
+is functionally complete for all three stores (memory / SQL / Mongo). Vector index backends will be implemented in a future release.
 
 ### Phase 5: Document Parsers
 
@@ -1546,7 +1566,11 @@ def test_e2e_index_and_retrieve():
 
 ### 12.2 Vector Database Selection
 
-**Current decision:** Start with in-memory (MVP), then SQL with JSON storage.
+**Current decision:** Python-side cosine similarity across all three store backends (memory / SQL / Mongo). Functionally complete; sufficient for <100K chunks.
+
+**Evaluation completed (Phase 4E):** pgvector is the recommended upgrade path for `SqlKnowledgeStore` (natural PG extension, drop-in DDL migration). FAISS is the recommended lightweight local backend for pure-SQLite or high-throughput scenarios. MongoDB Atlas Vector Search is deferred — it requires the cloud-only Atlas tier, incompatible with the current local-first store contract. See Phase 4E evaluation in Section 5 for the full comparison matrix.
+
+**Implementation note:** Vector index backends are performance enhancements, not functional requirements. They will be implemented in a future release.
 
 **Future options:**
 
