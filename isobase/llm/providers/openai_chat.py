@@ -153,7 +153,18 @@ class OpenAIChat(BaseLLMClient):
         # role == "tool"
         if isinstance(message.content, str):
             return {"role": "tool", "content": message.content}
-        return {"role": "tool", "content": ""}
+        tool_id, tool_name, tool_content = "", "", ""
+        for block in message.content:
+            if block.type == "tool_result":
+                tool_id = block.tool_call_id
+                tool_name = block.name
+                tool_content = block.text
+        native_tool: Dict[str, Any] = {"role": "tool", "content": tool_content}
+        if tool_id:
+            native_tool["tool_call_id"] = tool_id
+        if tool_name:
+            native_tool["name"] = tool_name
+        return native_tool
 
     @classmethod
     def to_neutral_message(cls, native_message: Dict[str, Any]) -> LLMMessage:

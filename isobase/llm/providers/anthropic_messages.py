@@ -32,7 +32,7 @@ Key Anthropic-specific handling versus OpenAI:
 """
 
 from inspect import signature
-from json import dumps
+from json import dumps, loads as json_loads
 from typing import Any, Callable, Dict, Iterator, List, Literal, Optional, Tuple, Union, overload
 
 from anthropic import Anthropic, BadRequestError
@@ -178,7 +178,7 @@ class AnthropicMessages(BaseLLMClient):
                         "type": "tool_use",
                         "id": block.tool_call.id,
                         "name": block.tool_call.name,
-                        "input": json.loads(block.tool_call.arguments) if block.tool_call.arguments else {},
+                        "input": json_loads(block.tool_call.arguments) if block.tool_call.arguments else {},
                     })
                 elif block.type == "raw" and block.raw is not None:
                     blocks.append(block.raw)
