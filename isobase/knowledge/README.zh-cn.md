@@ -200,7 +200,7 @@ isobase/llm/tools/knowledge/
 │   └── tools.py         # 工具实现
 
 isobase/knowledge/
-├── entities.py          # 核心 DTO（KnowledgeBase, Document, Chunk, RetrievalResult）
+├── entities.py          # 核心 DTO（KnowledgeBase, Document, Chunk, RetrievalResult, RetrievalOption）
 ├── embeddings/
 │   ├── base.py         # BaseEmbeddingClient 抽象基类
 │   └── openai.py # OpenAI 兼容客户端
@@ -215,8 +215,9 @@ isobase/knowledge/
 │   └── mongo.py        # MongoDB 后端存储
 ├── retrieval/
 │   ├── __init__.py     # 检索模块导出
-│   ├── base.py         # BaseRetriever 抽象基类
-│   └── dense.py        # 稠密向量检索器（余弦相似度）
+│   ├── base.py         # BaseRetriever 抽象基类 + DenseRetrievalItem
+│   ├── dense.py        # 稠密向量检索器（余弦相似度）
+│   └── pipeline.py     # RetrievalPipeline（candidate_k, metadata filter, top_k trim）
 ├── service.py          # KnowledgeBaseService 编排
 └── tools.py            # LLM 工具包装器
 ```
@@ -257,6 +258,19 @@ isobase/knowledge/
 - 块内容
 - 相似度分数
 - 父文档引用
+- 分数来源（``"dense"``、``"sparse"``、``"fused"``、``"rerank"``）
+
+### 检索选项 (RetrievalOption)
+
+控制检索行为：
+
+- ``top_k`` — 返回结果数量（默认 5）
+- ``candidate_k`` — 最终筛选前获取的候选数（默认等于 ``top_k``）
+- ``metadata_filter`` — 块元数据等值过滤
+
+### 检索管道 (RetrievalPipeline)
+
+编排检索流程：从存储获取候选 → 应用 metadata filter → 裁剪到 ``top_k``。管道是检索逻辑的**唯一入口点**——存储后端只需提供 ``search(kb_id, query_embedding, top_k)``，无需关心 metadata filter 或 candidate/final_k。
 
 ## 分块策略
 
@@ -416,6 +430,9 @@ store = MongoKnowledgeStore(mongo_service)
 
 ### Phase 3: 增强检索
 
+- ✅ ``RetrievalOption`` — ``candidate_k``、metadata filter、``top_k`` 控制
+- ✅ ``RetrievalPipeline`` — 检索流程的唯一入口
+- ✅ ``RetrievalResult.score_source`` — 明确分数语义（``"dense"``）
 - [ ] 混合检索（稠密 + 稀疏）
 - [ ] BM25 稀疏检索器
 - [ ] RRF（倒数排名融合）
@@ -433,7 +450,8 @@ store = MongoKnowledgeStore(mongo_service)
 - [ ] 异步/批量索引
 - [ ] 增量更新
 - [ ] 多知识库搜索
-- [ ] 元数据过滤
+- ✅ 元数据过滤
+- [ ] ``candidate_k`` / ``final_k`` 管道化
 - [ ] pgvector 迁移
 
 ## 参考

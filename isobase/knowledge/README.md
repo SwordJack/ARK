@@ -209,7 +209,7 @@ isobase/llm/tools/knowledge/
 │   └── tools.py         # Tool implementation
 
 isobase/knowledge/
-├── entities.py          # Core DTOs (KnowledgeBase, Document, Chunk, RetrievalResult)
+├── entities.py          # Core DTOs (KnowledgeBase, Document, Chunk, RetrievalResult, RetrievalOption)
 ├── embeddings/
 │   ├── base.py         # BaseEmbeddingClient ABC
 │   └── openai.py # OpenAI-compatible client
@@ -224,8 +224,9 @@ isobase/knowledge/
 │   └── mongo.py        # MongoDB-backed store
 ├── retrieval/
 │   ├── __init__.py     # Retrieval exports
-│   ├── base.py         # BaseRetriever ABC
-│   └── dense.py        # Dense retriever (cosine similarity)
+│   ├── base.py         # BaseRetriever ABC + DenseRetrievalItem
+│   ├── dense.py        # Dense retriever (cosine similarity)
+│   └── pipeline.py     # RetrievalPipeline (candidate_k, metadata filter, top_k trim)
 ├── service.py          # KnowledgeBaseService orchestration
 └── tools.py            # LLM tool wrappers
 ```
@@ -268,6 +269,19 @@ Search result containing:
 - Chunk content
 - Similarity score
 - Parent document reference
+- Score source (``"dense"``, ``"sparse"``, ``"fused"``, ``"rerank"``)
+
+### RetrievalOption
+
+Controls retrieval behavior:
+
+- ``top_k`` — number of results to return (default 5)
+- ``candidate_k`` — candidates to fetch before final trim (defaults to ``top_k``)
+- ``metadata_filter`` — chunk metadata equality filters
+
+### RetrievalPipeline
+
+Orchestrates retrieval flow: gather candidates from store → apply metadata filter → trim to ``top_k``. The pipeline is the **single entry point** for retrieval logic — store backends only provide ``search(kb_id, query_embedding, top_k)`` and don't need to know about metadata filters or candidate/final_k.
 
 ## Chunking Strategies
 
@@ -505,6 +519,9 @@ Follows existing patterns:
 
 ### Phase 3: Enhanced Retrieval
 
+- ✅ ``RetrievalOption`` — ``candidate_k``, metadata filter, ``top_k`` controls
+- ✅ ``RetrievalPipeline`` — single entry point for retrieval flow
+- ✅ ``RetrievalResult.score_source`` — explicit score semantics (``"dense"``)
 - [ ] Hybrid retrieval (dense + sparse)
 - [ ] BM25 sparse retriever
 - [ ] RRF (Reciprocal Rank Fusion)
@@ -522,7 +539,8 @@ Follows existing patterns:
 - [ ] Async/batch indexing
 - [ ] Incremental updates
 - [ ] Multi-knowledge-base search
-- [ ] Metadata filtering
+- ✅ Metadata filtering
+- [ ] ``candidate_k`` / ``final_k`` in pipeline
 - [ ] pgvector migration
 
 ## References
