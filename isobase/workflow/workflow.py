@@ -47,10 +47,9 @@ from .config import (
     Placeholder,
 )
 
-from .database import (
-    SqliteSqlalchemy,
-    ExecutionEntity as EntityORM
-)
+from isobase.database.sql import SqlDbService, sql_db
+
+from .models import WorkflowExecutionRecord, Base as WorkflowBase
 
 BASE_DIRECTORY = getcwd()   # Base working directory. 
                             # (Not the current directory where this file is located, but the directory where the program is triggered.)
@@ -108,7 +107,7 @@ class ExecutionEntity:
         child_execution_entities (list): Child execution entities of current instance.
                                         e.g. `sub_workflows` in `LoopWorkUnit`, `workunits` in `WorkFlow`, etc.
         working_directory (str): Indicates where to run the job.
-        sqlite_filepath (str): The filepath to your sqlite database file for persistent storage.
+        sql_service (SqlDbService, optional): The database service to use for execution tracking.
         identifier: A unique identifier for the instance, used to track and reference the entity.
         is_executable: Indicates whether the instance has passed self-inspection and is ready for execution.
 
@@ -122,11 +121,10 @@ class ExecutionEntity:
     locator: list   # A list of the hierarchical indexes to locate the current ExecutionEntity instance.
     debug: bool     # Indicates whether to run in debug mode.
     child_execution_entities: list  # Child execution entities of current instance.
-    database_session: Session   # The database connection session.
+    sql_service: SqlDbService | None   # The configured SQL service for this execution tree.
     working_directory: str      # Indicates where to run the job.
-    sqlite_filepath: str        # The filepath to your sqlite database file for persistent storage. 
 
-    def __init__(self, working_directory: str = BASE_DIRECTORY, debug: bool = False, locator: List[int] = list(), sqlite_filepath: str = str()):
+    def __init__(self, working_directory: str = BASE_DIRECTORY, debug: bool = False, locator: List[int] = list(), sql_service: SqlDbService | None = None):
         """Initialize an ExecutionEntity instance.
         
         Args:
@@ -134,30 +132,15 @@ class ExecutionEntity:
             debug (bool, optional): Indicates whether to run in debug mode.
             locator (List[int], optional): A list of the hierarchical indexes to locate the current workflow.
                                 If the current workflow is at the outermost level, this value is an empty list.
-            sqlite_filepath (str): The filepath to your sqlite database file for persistent storage.
+            sql_service (SqlDbService, optional): The database service to use.
         """
         self.working_directory = working_directory
         self.debug = debug
         self.locator = locator
-        self.sqlite_filepath = sqlite_filepath
+        self.sql_service = sql_service
         self._status = StatusCode.CREATED
         self.api_key = str()
         self.child_execution_entities = None
-        if (sqlite_filepath):
-            self.sqlite_filepath = sqlite_filepath
-
-    def create_database_session(self, overwrite_database: bool = False) -> Session:
-        """Create database session with given working directory and sqlite_filename.
-        
-        Args:
-            sqlite_filepath (str): The filepath to your sqlite database file for persistent storage.
-            overwrite_database: If overwrite the database file when it exists. Default False.
-
-        Returns:
-            The database connection session to save entity status as persistent storage.
-        """
-        session = SqliteSqlalchemy(self.sqlite_filepath, overwrite_database).session
-        return session
     
     @property
     def status(self) -> int:
@@ -178,20 +161,19 @@ class ExecutionEntity:
         """
         if (not self.is_executable):
             return
-        if (not self.sqlite_filepath):
-            LOGGER.warning(f"No SQLite filepath specified, so the execution status of {self.identifier} is not synchronized! (If during initialization, ignore it.)")
+        if not self.sql_service:
+            LOGGER.warning(f"No SQL service specified, so the execution status of {self.identifier} is not synchronized! (If during initialization, ignore it.)")
             return
-        database_session = self.create_database_session()
-        if (database_session):
-            entity = EntityORM(self.identifier, self.status)
-            if (entity.status == StatusCode.DEPRECATED):
-                entity.delete(database_session)
-            else:
-                entity.insert_or_update(database_session)
-            database_session.close()
-        else:
-            LOGGER.warning(f"Database session doesn't exist in {self.identifier}!")
-            return
+        
+        try:
+            with self.sql_service.create_session() as session:
+                if self.status == StatusCode.DEPRECATED:
+                    WorkflowExecutionRecord.delete_many(identifier=self.identifier, session=session)
+                else:
+                    WorkflowExecutionRecord.save_status(self.identifier, self.status, session=session)
+                session.commit()
+        except Exception as e:
+            LOGGER.warning(f"Failed to synchronize status for {self.identifier}: {e}")
     
     @property
     def is_executable(self) -> bool:
@@ -284,12 +266,8 @@ class ExecutionEntity:
         based on the current timestamp.
 
         Note:
-            Once you dump your snapshot file, the database session will be dumped.
-
-            If the `save_directory` value entered is not a directory, 
-            or if saving a file to this directory fails, the save directory would be 
-            switched to the `working_directory` and a Warning is prompted; 
-            if the file cannot be saved to the working directory either, an exception would be raised.
+            SQLAlchemy engines cannot be pickled. The `sql_service` will be temporarily
+            detached during pickling and must be re-injected upon loading.
 
         Args:
             save_directory (str, optional): The directory where the snapshot file will be saved.
@@ -309,6 +287,11 @@ class ExecutionEntity:
         current_time = datetime.now()
         filename = f"snapshot_{self.api_key}_{current_time.strftime('%Y-%m-%d_%H-%M-%S')}.pickle"
         filepath = path.join(dir_to_save, filename)
+
+        # Detach unpicklable service
+        _svc = getattr(self, "sql_service", None)
+        self.sql_service = None
+
         try:
             with open(file=filepath, mode="wb") as fobj:
                 pickle.dump(self, file=fobj)
@@ -320,11 +303,16 @@ class ExecutionEntity:
                 with open(file=filepath, mode="wb") as fobj:
                     pickle.dump(self, file=fobj)
             else:
+                # restore service before raising
+                self.sql_service = _svc
                 raise exc
+        
+        # Restore service
+        self.sql_service = _svc
         return filepath
     
     @classmethod
-    def load_snapshot_file(cls, filepath: str) -> ExecutionEntity | GeneralWorkUnit:
+    def load_snapshot_file(cls, filepath: str, sql_service: SqlDbService | None = None) -> ExecutionEntity | GeneralWorkUnit:
         """
         Loads a ExecutionEntity instance from a snapshot file.
 
@@ -334,6 +322,7 @@ class ExecutionEntity:
 
         Args:
             filepath (str): The path to the snapshot file from which to load the state.
+            sql_service (SqlDbService, optional): The database service to inject into the loaded entity.
 
         Returns:
             ExecutionEntity: The deserialized ExecutionEntity instance.
@@ -347,8 +336,23 @@ class ExecutionEntity:
             if not isinstance(unit, __class__):
                 raise TypeError(f"The loaded object is not an instance of {__class__.__name__}.")
             
-            database_session = unit.create_database_session()
-            database_session.close()
+            # Re-inject service to the entire hierarchy
+            def inject_service(node):
+                node.sql_service = sql_service
+                if getattr(node, "child_execution_entities", None):
+                    if isinstance(node.child_execution_entities, list):
+                        for child in node.child_execution_entities:
+                            inject_service(child)
+                    elif isinstance(node.child_execution_entities, dict):
+                        for child in node.child_execution_entities.values():
+                            inject_service(child)
+            
+            if sql_service:
+                inject_service(unit)
+                # optionally ensure tables exist
+                WorkflowExecutionRecord.create_table(checkfirst=True)
+                WorkflowExecutionRecord.use_sql_service(sql_service)
+
             return unit
 
     def reload(self):
@@ -404,7 +408,7 @@ class WorkFlow(ExecutionEntity):
                 data_mapper_to_inherite: Dict[str, Any] = dict(),
                 outer_data_mappers: List[dict] = list(),
                 control_workunit: ControlWorkUnit = None,
-                sqlite_filepath: str = str(),
+                sql_service: SqlDbService | None = None,
                 ) -> None:
         """Initialize an instance.
         
@@ -417,9 +421,9 @@ class WorkFlow(ExecutionEntity):
             data_mapper_to_inherite (Dict[str, Any], optional): The data mapper containing the data to be inherited, typically the data mapper of the current layer workflow.
             outer_data_mappers (List[dict], optional): List of data mappers from outer layer workflows.
             control_workunit (ControlWorkUnit): The outer ControlWorkUnit instance hosting the current workflow.
-            sqlite_filepath (str): The filepath to your sqlite database file for persistent storage.
+            sql_service (SqlDbService, optional): The database service to use for execution tracking.
         """
-        super().__init__(working_directory=working_directory, debug=debug, locator=locator, sqlite_filepath=sqlite_filepath)
+        super().__init__(working_directory=working_directory, debug=debug, locator=locator, sql_service=sql_service)
 
         # Assigned values.
         self.intermediate_data_mapper = intermediate_data_mapper
@@ -444,7 +448,7 @@ class WorkFlow(ExecutionEntity):
                 data_mapper_to_inherite: Dict[str, Any] = dict(),
                 outer_data_mappers: List[dict] = list(),
                 control_workunit: ControlWorkUnit = None, 
-                sqlite_filepath: str = str(),
+                sql_service: SqlDbService | None = None,
                 ) -> WorkFlow:
         """Initialize an instance of WorkFlow from a given dictionary instance.
         
@@ -458,7 +462,7 @@ class WorkFlow(ExecutionEntity):
             data_mapper_to_inherite (Dict[str, Any], optional): The data mapper containing the data to be inherited, typically the data mapper of the current layer workflow.
             outer_data_mappers (List[dict], optional): List of data mappers from outer layer workflows.
             control_workunit (ControlWorkUnit): The outer ControlWorkUnit instance hosting the current workflow.
-            sqlite_filepath (str): The filepath to your sqlite database file for persistent storage.
+            sql_service (SqlDbService, optional): The database service to use for execution tracking.
         
         Returns:
             An instance of WorkFlow.
@@ -469,7 +473,7 @@ class WorkFlow(ExecutionEntity):
                 data_mapper_to_inherite=data_mapper_to_inherite, 
                 outer_data_mappers=outer_data_mappers, 
                 control_workunit=control_workunit, 
-                sqlite_filepath=sqlite_filepath)
+                sql_service=sql_service)
         flow.status = StatusCode.INITIALIZING
         if (not unit_dict_list):
             no_workunit_err_msg = "Initializing WorkFlow with no workunits. Workunits are expected."
@@ -555,16 +559,16 @@ class WorkFlow(ExecutionEntity):
             LOGGER.info(f"Parsing Control WorkUnit {api_key}.")
             if api_key == LOOP_API_KEY:
                 # Setup a placeholder in `workflow.intermediate_data_mapper`.
-                workunit = LoopWorkUnit.from_dict(unit_dict=unit_dict, workflow=self, working_directory=self.working_directory, locator=locator_to_pass, sqlite_filepath=self.sqlite_filepath, debug=self.debug)
+                workunit = LoopWorkUnit.from_dict(unit_dict=unit_dict, workflow=self, working_directory=self.working_directory, locator=locator_to_pass, sql_service=self.sql_service, debug=self.debug)
             elif api_key == CLUSTER_BATCH_API_KEY:
-                workunit = ClusterBatchWorkUnit.from_dict(unit_dict=unit_dict, workflow=self, working_directory=self.working_directory, locator=locator_to_pass, sqlite_filepath=self.sqlite_filepath, debug=self.debug)
+                workunit = ClusterBatchWorkUnit.from_dict(unit_dict=unit_dict, workflow=self, working_directory=self.working_directory, locator=locator_to_pass, sql_service=self.sql_service, debug=self.debug)
             elif api_key == GENERAL_API_KEY:
                 error_msg = "GeneralWorkUnit should not be configured inside a workflow."
                 LOGGER.error(error_msg)
                 self.error_msg_list.append(error_msg)
         else:
             LOGGER.info(f"Parsing Basic WorkUnit {api_key}.")
-            workunit = WorkUnit.from_dict(unit_dict=unit_dict, workflow=self, working_directory=self.working_directory, locator=locator_to_pass, sqlite_filepath=self.sqlite_filepath, debug=self.debug)
+            workunit = WorkUnit.from_dict(unit_dict=unit_dict, workflow=self, working_directory=self.working_directory, locator=locator_to_pass, sql_service=self.sql_service, debug=self.debug)
 
         # Setup a placeholder in `workflow.intermediate_data_mapper`.
         self.intermediate_data_mapper[VarFormatter.unformat_variable(workunit.return_key)] = Placeholder.PLACEHOLDER_STR_VALUE
@@ -721,7 +725,7 @@ class WorkUnit(ExecutionEntity):
     error_msg_list: list
     params_to_assign_at_execution: list
 
-    def __init__(self, unit_dict: dict = dict(), workflow: WorkFlow = None, working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), sqlite_filepath: str = str(), debug: bool = False):
+    def __init__(self, unit_dict: dict = dict(), workflow: WorkFlow = None, working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), sql_service: SqlDbService | None = None, debug: bool = False):
         """Initializes a WorkUnit instance.
 
         Args:
@@ -730,10 +734,10 @@ class WorkUnit(ExecutionEntity):
             workflow (WorkFlow): A reference to the workflow object this unit belongs to.
             working_directory (str, optional): Indicates where to run the job. Default to current directory.
             locator (list, optional): A list of the hierarchical indexes to locate the current workunit.
-            sqlite_filepath (str): The filepath to your sqlite database file for persistent storage.
+            sql_service (SqlDbService, optional): The database service to use for execution tracking.
             debug (bool, optional): Indicates whether to run in debug mode.
         """
-        super().__init__(working_directory=working_directory, debug=debug, locator=locator, sqlite_filepath=sqlite_filepath)
+        super().__init__(working_directory=working_directory, debug=debug, locator=locator, sql_service=sql_service)
         # Initialize attributes in the constructor
         # to prevent them from being considered as class attributes.
         self.architecture = self.read_architecture(unit_dict=unit_dict)
@@ -783,7 +787,7 @@ class WorkUnit(ExecutionEntity):
         return result
 
     @classmethod
-    def from_dict(cls, unit_dict: dict, workflow: WorkFlow = None, working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), sqlite_filepath: str = str(), debug: bool = False) -> WorkUnit:
+    def from_dict(cls, unit_dict: dict, workflow: WorkFlow = None, working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), sql_service: SqlDbService | None = None, debug: bool = False) -> WorkUnit:
         """Initializes an instance of WorkUnit from a given dictionary.
 
         The dictionary should contain keys such as `api`, `store_as`, and `args`
@@ -796,7 +800,7 @@ class WorkUnit(ExecutionEntity):
             workflow (WorkFlow, optional): The workflow instance to which this unit belongs.
             working_directory (str, optional): Indicates where to run the job. Default to current directory.
             locator (list, optional): A list of the hierarchical indexes to locate the current workunit.
-            sqlite_filepath (str): The filepath to your sqlite database file for persistent storage.
+            sql_service (SqlDbService, optional): The database service to use for execution tracking.
             debug (bool, optional): Indicates whether to run in debug mode.
 
         Returns:
@@ -806,7 +810,7 @@ class WorkUnit(ExecutionEntity):
             KeyError: If the API key cannot be mapped to any API.
         """
         # Initialize the class.
-        unit = __class__(unit_dict=unit_dict, workflow=workflow, working_directory=working_directory, locator=locator, sqlite_filepath=sqlite_filepath, debug=debug)
+        unit = __class__(unit_dict=unit_dict, workflow=workflow, working_directory=working_directory, locator=locator, sql_service=sql_service, debug=debug)
         unit.status = StatusCode.INITIALIZING
 
         # Map the API.
@@ -1182,9 +1186,9 @@ class ControlWorkUnit(WorkUnit):
 
     def __init__(self, unit_dict: dict = dict(), workflow: WorkFlow = None, 
                 working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), 
-                sqlite_filepath: str = str(), debug: bool = False):
+                sql_service: SqlDbService | None = None, debug: bool = False):
         super().__init__(unit_dict=unit_dict, workflow=workflow, working_directory=working_directory, 
-                    locator=locator, sqlite_filepath=sqlite_filepath, debug=debug)
+                    locator=locator, sql_service=sql_service, debug=debug)
         if (self.workflow):
             self.workflow.nested_control_unit_return_keys.append(self.return_key)
 
@@ -1316,7 +1320,7 @@ class IterativeWorkUnit(ControlWorkUnit):
     sub_workflows: List[WorkFlow]
     run_in_subfolders: bool
 
-    def __init__(self, unit_dict: dict, iterable_data_label: str, iterative_body_datum_label: str, placeholder_api: Callable, workflow: WorkFlow = None, working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), sqlite_filepath: str = str(), debug: bool = False):
+    def __init__(self, unit_dict: dict, iterable_data_label: str, iterative_body_datum_label: str, placeholder_api: Callable, workflow: WorkFlow = None, working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), sql_service: SqlDbService | None = None, debug: bool = False):
         """Initializes an IterativeWorkUnit instance.
 
         Args:
@@ -1327,10 +1331,10 @@ class IterativeWorkUnit(ControlWorkUnit):
             workflow (WorkFlow): A reference to the workflow object this unit belongs to.
             working_directory (str, optional): Indicates where to run the job. Default to current directory.
             locator (list, optional): A list of the hierarchical indexes to locate the current workunit.
-            sqlite_filepath (str): The filepath to your sqlite database file for persistent storage.
+            sql_service (SqlDbService, optional): The database service to use for execution tracking.
             debug (bool, optional): Indicates whether to run in debug mode.
         """
-        super().__init__(unit_dict=unit_dict, workflow=workflow, working_directory=working_directory, locator=locator, sqlite_filepath=sqlite_filepath, debug=debug)
+        super().__init__(unit_dict=unit_dict, workflow=workflow, working_directory=working_directory, locator=locator, sql_service=sql_service, debug=debug)
         self.iterable_data_label = iterable_data_label
         self.iterative_body_datum_label = iterative_body_datum_label
         self.api = placeholder_api
@@ -1505,7 +1509,7 @@ class LoopWorkUnit(IterativeWorkUnit):
         """
         pass
 
-    def __init__(self, unit_dict: dict, workflow: WorkFlow = None, working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), sqlite_filepath: str = str(), debug: bool = False):
+    def __init__(self, unit_dict: dict, workflow: WorkFlow = None, working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), sql_service: SqlDbService | None = None, debug: bool = False):
         """Initializes a LoopWorkUnit instance.
 
         Args:
@@ -1513,16 +1517,16 @@ class LoopWorkUnit(IterativeWorkUnit):
             workflow (WorkFlow): A reference to the workflow object this unit belongs to.
             working_directory (str, optional): Indicates where to run the job. Default to current directory.
             locator (list, optional): A list of the hierarchical indexes to locate the current workunit.
-            sqlite_filepath (str): The filepath to your sqlite database file for persistent storage.
+            sql_service (SqlDbService, optional): The database service to use for execution tracking.
             debug (bool, optional): Indicates whether to run in debug mode.
         """
         super().__init__(unit_dict=unit_dict, workflow=workflow, iterable_data_label=LOOP_ITERABLE_DATA_LABEL, 
                 iterative_body_datum_label=LOOP_BODY_DATUM_LABEL, placeholder_api=__class__.loop_unit_placeholder_api,
-                working_directory=working_directory, locator=locator, sqlite_filepath=sqlite_filepath, debug=debug)
+                working_directory=working_directory, locator=locator, sql_service=sql_service, debug=debug)
         return
 
     @classmethod
-    def from_dict(cls, unit_dict: dict, workflow: WorkFlow = None, working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), sqlite_filepath: str = str(), debug: bool = False) -> LoopWorkUnit:
+    def from_dict(cls, unit_dict: dict, workflow: WorkFlow = None, working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), sql_service: SqlDbService | None = None, debug: bool = False) -> LoopWorkUnit:
         """Initializes an instance of LoopWorkUnit from a given dictionary.
 
         As with a normal WorkUnit, the dictionary should contain keys such as `api`, `store_as`, 
@@ -1537,7 +1541,7 @@ class LoopWorkUnit(IterativeWorkUnit):
             workflow (WorkFlow, optional): The parent workflow of this unit.
             working_directory (str, optional): Indicates where to run the job. Default to current directory.
             locator (list, optional): A list of the hierarchical indexes to locate the current workunit.
-            sqlite_filepath (str): The filepath to your sqlite database file for persistent storage.
+            sql_service (SqlDbService, optional): The database service to use for execution tracking.
             debug (bool, optional): Indicates whether to run in debug mode.
 
         Returns:
@@ -1545,7 +1549,7 @@ class LoopWorkUnit(IterativeWorkUnit):
         """
         LOGGER.info(f"Initializing a {__class__.__name__} now...")
         unit = __class__(unit_dict=unit_dict, workflow=workflow, working_directory=working_directory, 
-                        locator=locator, sqlite_filepath=sqlite_filepath, debug=debug)
+                        locator=locator, sql_service=sql_service, debug=debug)
         unit.actualize()
         return unit
 
@@ -1615,7 +1619,7 @@ class LoopWorkUnit(IterativeWorkUnit):
                     intermediate_data_mapper=data_mapper_for_initialization,
                     data_mapper_to_inherite=self.workflow.intermediate_data_mapper,
                     outer_data_mappers=self.workflow.outer_data_mappers,
-                    control_workunit=self, sqlite_filepath=self.sqlite_filepath)
+                    control_workunit=self, sql_service=self.sql_service)
                 self.sub_workflows.append(workflow)
             continue
 
@@ -1692,7 +1696,7 @@ class ClusterBatchWorkUnit(IterativeWorkUnit):  # TODO (Zhong)
         """
         pass
 
-    def __init__(self, unit_dict: dict, workflow: WorkFlow = None, working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), sqlite_filepath: str = str(), debug: bool = False):
+    def __init__(self, unit_dict: dict, workflow: WorkFlow = None, working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), sql_service: SqlDbService | None = None, debug: bool = False):
         """Initializes a ClusterBatchWorkUnit instance.
 
         Args:
@@ -1700,16 +1704,16 @@ class ClusterBatchWorkUnit(IterativeWorkUnit):  # TODO (Zhong)
             workflow (WorkFlow): A reference to the workflow object this unit belongs to.
             working_directory (str, optional): Indicates where to run the job. Default to current directory.
             locator (list, optional): A list of the hierarchical indexes to locate the current workunit.
-            sqlite_filepath (str): The filepath to your sqlite database file for persistent storage.
+            sql_service (SqlDbService, optional): The database service to use for execution tracking.
             debug (bool, optional): Indicates whether to run in debug mode.
         """        
         super().__init__(unit_dict=unit_dict, workflow=workflow, iterable_data_label=BATCH_ITERABLE_DATA_LABEL, 
                 iterative_body_datum_label=BATCH_BODY_DATUM_LABEL, placeholder_api=__class__.cluster_batch_placeholder_api,
-                working_directory=working_directory, locator=locator, sqlite_filepath=sqlite_filepath, debug=debug)
+                working_directory=working_directory, locator=locator, sql_service=sql_service, debug=debug)
         return
     
     @classmethod
-    def from_dict(cls, unit_dict: dict, workflow: WorkFlow = None, working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), sqlite_filepath: str = str(), debug: bool = False) -> ClusterBatchWorkUnit:
+    def from_dict(cls, unit_dict: dict, workflow: WorkFlow = None, working_directory: str = BASE_DIRECTORY, locator: List[int] = list(), sql_service: SqlDbService | None = None, debug: bool = False) -> ClusterBatchWorkUnit:
         """Initializes an instance of ClusterBatchWorkUnit from a given dictionary.
 
         As with a normal WorkUnit, the dictionary should contain keys such as `api`, `store_as`, 
@@ -1724,7 +1728,7 @@ class ClusterBatchWorkUnit(IterativeWorkUnit):  # TODO (Zhong)
             workflow (WorkFlow, optional): The parent workflow of this unit.
             working_directory (str, optional): Indicates where to run the job. Default to current directory.
             locator (list, optional): A list of the hierarchical indexes to locate the current workunit.
-            sqlite_filepath (str): The filepath to your sqlite database file for persistent storage.
+            sql_service (SqlDbService, optional): The database service to use for execution tracking.
             debug (bool, optional): Indicates whether to run in debug mode.
 
         Returns:
@@ -1732,7 +1736,7 @@ class ClusterBatchWorkUnit(IterativeWorkUnit):  # TODO (Zhong)
         """
         LOGGER.info(f"Initializing a {__class__.__name__} now...")
         unit = __class__(unit_dict=unit_dict, workflow=workflow, working_directory=working_directory, 
-                        locator=locator, sqlite_filepath=sqlite_filepath, debug=debug)
+                        locator=locator, sql_service=sql_service, debug=debug)
         unit.actualize()
         unit.max_simultaeneous_jobs = unit.args_dict_to_pass.get("max_simultaeneous_jobs", DEFAULT_CLUSTER_JOB_CAPABILITY)
         return unit
@@ -1804,7 +1808,7 @@ class ClusterBatchWorkUnit(IterativeWorkUnit):  # TODO (Zhong)
                     intermediate_data_mapper=data_mapper_for_initialization,
                     data_mapper_to_inherite=self.workflow.intermediate_data_mapper, 
                     outer_data_mappers=self.workflow.outer_data_mappers,
-                    control_workunit=self, sqlite_filepath=self.sqlite_filepath)
+                    control_workunit=self, sql_service=self.sql_service)
                 self.sub_workflows.append(workflow)
             continue
 
@@ -1880,7 +1884,7 @@ class GeneralWorkUnit(ControlWorkUnit):
                 workflow: WorkFlow = None, 
                 working_directory: str = BASE_DIRECTORY, 
                 save_snapshot: bool = False, 
-                sqlite_filepath: str = str(), 
+                sql_service: SqlDbService | None = None, 
                 debug: bool = False):
         """Initializes a GeneralWorkUnit instance.
 
@@ -1890,17 +1894,18 @@ class GeneralWorkUnit(ControlWorkUnit):
             working_directory (str, optional): Indicates where to run the job. Default to current working directory.
             save_snapshot (bool, optional): Whether to automatically save the GeneralWorkUnit instance as a pickle file 
                                         when it exits due to Error, Pause, or Completion. Default False.
-            sqlite_filepath (str): The filepath to your sqlite database file for persistent storage.
+            sql_service (SqlDbService, optional): The database service to use for execution tracking.
             debug (bool, optional): Indicates whether to run in debug mode.
         """
-        super().__init__(unit_dict=unit_dict, workflow=workflow, working_directory=working_directory, sqlite_filepath=sqlite_filepath, debug=debug)
+        super().__init__(unit_dict=unit_dict, workflow=workflow, working_directory=working_directory, sql_service=sql_service, debug=debug)
         self.save_snapshot = save_snapshot
         self.api_key = GENERAL_API_KEY
         self.latest_pickle_filepath = str()
         self.status = StatusCode.CREATED
 
     @classmethod
-    def from_dict(cls, unit_dict: dict, working_directory: str = BASE_DIRECTORY, 
+    def from_dict(cls, unit_dict: dict, working_directory: str = BASE_DIRECTORY,
+                sql_service: SqlDbService | None = None,
                 sqlite_filename: str = DEFAULT_SQLITE_FILENAME, overwrite_database: bool = False,
                 save_snapshot: bool = False, debug: bool = False, data_mapper_for_init: dict = dict()) -> GeneralWorkUnit:
         """Initializes an instance of GeneralWorkUnit from a given dictionary.
@@ -1914,7 +1919,7 @@ class GeneralWorkUnit(ControlWorkUnit):
             working_directory (str, optional): Indicates where to run the job. Default to current directory.
             save_snapshot (bool, optional): Whether to automatically save the GeneralWorkUnit instance as a pickle file 
                                         when it exits due to Error, Pause, or Completion. Default False.
-            sqlite_filename (str): The filename of your sqlite database file for persistent storage.
+            sqlite_filename (str, optional): Fallback local database filename if no sql_service is provided.
             debug (bool, optional): Indicates whether to run in debug mode.
             data_mapper_for_init (dict, optional): An data mapper for initialization, which can be used to pass in data of types that are inconvenient to record in JSON.
 
@@ -1930,15 +1935,17 @@ class GeneralWorkUnit(ControlWorkUnit):
 
         unit_dict[WORKUNIT_ARGUMENT_LIST_KEY][WORKING_DIRECTORY_KEY] = working_directory    # Update working directory to the unit dict.
         make_directory(working_directory)
-        sqlite_filepath = path.join(working_directory, sqlite_filename)
+        # sql_service was filepath before
 
         # Temporarily change directory before initialization.
         chdir(working_directory)
 
         # Initialize the class.
-        unit = __class__(unit_dict=unit_dict, working_directory=working_directory, save_snapshot=save_snapshot, sqlite_filepath=sqlite_filepath, debug=debug)
-        database_session = unit.create_database_session(overwrite_database=overwrite_database)
-        database_session.close()
+        unit = __class__(unit_dict=unit_dict, working_directory=working_directory, save_snapshot=save_snapshot, sql_service=sql_service, debug=debug)
+        if sql_service:
+            WorkflowExecutionRecord.use_sql_service(sql_service)
+            WorkflowExecutionRecord.create_table(checkfirst=True)
+
         if not save_snapshot:
             not_save_snapshot_warning_msg = "The `save_snapshot` value is not set to `True`, so this GeneralWorkUnit instance will not automatically save its state on error or pause and continue computing later after corrections."
             LOGGER.warning(not_save_snapshot_warning_msg)
@@ -1966,7 +1973,7 @@ class GeneralWorkUnit(ControlWorkUnit):
             unit.sub_workflow = WorkFlow.from_list(
                 unit_dict_list, debug=debug, 
                 data_mapper_to_inherite=general_unit_data_mapper, 
-                control_workunit=unit, sqlite_filepath=unit.sqlite_filepath)
+                control_workunit=unit, sql_service=unit.sql_service)
             if unit.sub_workflow.status == StatusCode.READY_TO_START:
                 unit.status = StatusCode.READY_TO_START
             else:
@@ -1984,6 +1991,7 @@ class GeneralWorkUnit(ControlWorkUnit):
     @classmethod
     def from_json_string(cls, json_str: str, 
                         working_directory: str = BASE_DIRECTORY, save_snapshot: bool = False, 
+                        sql_service: SqlDbService | None = None,
                         sqlite_filename: str = DEFAULT_SQLITE_FILENAME, overwrite_database: bool = False,
                         debug: bool = False, data_mapper_for_init: dict = dict()) -> GeneralWorkUnit:
         """Initialize an instance of GeneralWorkUnit from a serialized json string.
@@ -1993,7 +2001,7 @@ class GeneralWorkUnit(ControlWorkUnit):
             working_directory (str, optional): Indicates where to run the job. Default to current working directory.
             save_snapshot (bool, optional): Whether to automatically save the GeneralWorkUnit instance as a pickle file 
                                         when it exits due to Error, Pause, or Completion. Default False.
-            sqlite_filename (str, optional): The filename of the sqlite database file in your working directory.
+            sqlite_filename (str, optional): Fallback local database filename if no sql_service is provided.
             overwrite_database: If overwrite the database file when it exists. Default False.
             debug (bool, optional): Indicates whether to run in debug mode. Default False.
             data_mapper_for_init (dict, optional): An data mapper for initialization, which can be used to pass in data of types that are inconvenient to record in JSON.
@@ -2007,9 +2015,10 @@ class GeneralWorkUnit(ControlWorkUnit):
                                         overwrite_database=overwrite_database, debug=debug, 
                                         data_mapper_for_init=data_mapper_for_init)
 
-    @staticmethod
-    def from_json_file_object(json_fobj: TextIOWrapper, 
-                            working_directory: str = BASE_DIRECTORY, save_snapshot: bool = False, 
+    @classmethod
+    def from_json_file_object(cls, json_fobj: TextIOWrapper,
+                            working_directory: str = BASE_DIRECTORY, save_snapshot: bool = False,
+                            sql_service: SqlDbService | None = None,
                             sqlite_filename: str = DEFAULT_SQLITE_FILENAME, overwrite_database: bool = False,
                             debug: bool = False, data_mapper_for_init: dict = dict()) -> GeneralWorkUnit:
         """Initialize an instance of GeneralWorkUnit from a json file object.
@@ -2019,7 +2028,7 @@ class GeneralWorkUnit(ControlWorkUnit):
             working_directory (str, optional): Indicates where to run the job. Default to current working directory.
             save_snapshot (bool, optional): Whether to automatically save the GeneralWorkUnit instance as a pickle file 
                                         when it exits due to Error, Pause, or Completion. Default False.
-            sqlite_filename (str, optional): The filename of the sqlite database file in your working directory.
+            sqlite_filename (str, optional): Fallback local database filename if no sql_service is provided.
             overwrite_database: If overwrite the database file when it exists. Default False.
             debug (bool, optional): Indicates whether to run in debug mode. Default False.
             data_mapper_for_init (dict, optional): An data mapper for initialization, which can be used to pass in data of types that are inconvenient to record in JSON.
@@ -2029,6 +2038,7 @@ class GeneralWorkUnit(ControlWorkUnit):
         """
         json_str = json_fobj.read()
         return __class__.from_json_string(json_str=json_str, working_directory=working_directory, 
+                                                sql_service=sql_service,
                                                 save_snapshot=save_snapshot, sqlite_filename=sqlite_filename, overwrite_database=overwrite_database,
                                                 debug=debug, data_mapper_for_init=data_mapper_for_init)
 
@@ -2044,7 +2054,7 @@ class GeneralWorkUnit(ControlWorkUnit):
             working_directory (str, optional): Indicates where to run the job. Default to current working directory.
             save_snapshot (bool, optional): Whether to automatically save the GeneralWorkUnit instance as a pickle file 
                                         when it exits due to Error, Pause, or Completion. Default False.
-            sqlite_filename (str, optional): The filename of the sqlite database file in your working directory.
+            sqlite_filename (str, optional): Fallback local database filename if no sql_service is provided.
             overwrite_database (bool, optional): If overwrite the database file when it exists. Default False.
             debug (bool, optional): Indicates whether to run in debug mode. Default False.
             data_mapper_for_init (dict, optional): An data mapper for initialization, which can be used to pass in data of types that are inconvenient to record in JSON.

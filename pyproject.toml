@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "isobase"
-version = "0.1.2"
+version = "0.2.0"
 description = "Isomorphic Base (IsoBase) is a Python automation framework built around a JSON-driven workflow engine with AI/LLM integration."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -35,6 +35,8 @@ dependencies = [
     "pillow>=12.1.0",
     "pydantic>=2.11.9",
     "pycountry>=24.6.1",
+    "pymongo>=4.8.0",
+    "psycopg2-binary>=2.9.0",
     "pyyaml>=6.0.3",
     "regex>=2026.5.9",
     "requests>=2.34.2",

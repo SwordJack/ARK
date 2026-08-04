@@ -20,10 +20,11 @@ from openai.types import CompletionUsage
 from openai.types.chat import ChatCompletionChunk, ChatCompletion
 from PIL import Image as PILImage
 
+from isobase.core.image_service import convert_image_to_data_url
 from isobase.core.logger import LOGGER
 from .base import BaseLLMClient
 from ..callbacks import BaseLLMCallback
-from ..entities import LLMResponse, TokenUsage, ToolCall
+from ..entities import LLMMessage, LLMMessageHistory, LLMResponse, MessageContentBlock, TokenUsage, ToolCall
 from ..tools import FunctionTool, SearchTool, ToolSet
 
 
@@ -90,6 +91,182 @@ class OpenAIChat(BaseLLMClient):
         }
 
         LOGGER.info(f"OpenAIChat initialized (model: {default_model})")
+
+    # --- neutral / native message conversion ---------------------------------
+
+    @classmethod
+    def from_neutral_history(cls, history: LLMMessageHistory) -> Tuple[List[Dict[str, Any]], str]:
+        """Converts a neutral message history into OpenAI-native messages.
+
+        OpenAI keeps ``system`` as a regular message, so the default
+        extraction of the leading system prompt is applied simply to match
+        the common ``(messages, system_prompt)`` return shape.
+        """
+        messages: List[Dict[str, Any]] = []
+        system_prompt = ""
+        for m in history.messages:
+            if m.role == "system" and not system_prompt:
+                system_prompt = m.content if isinstance(m.content, str) else ""
+                messages.append({"role": "system", "content": system_prompt})
+                continue
+            messages.append(cls.from_neutral_message(m))
+        return messages, system_prompt
+
+    @classmethod
+    def from_neutral_message(cls, message: LLMMessage) -> Dict[str, Any]:
+        """Converts a provider-neutral message into OpenAI-native dict format.
+
+        Follows the same shape the provider's ``generate`` / ``generate_stream``
+        already accept so that existing callers are unaffected.
+        """
+        if message.role == "system":
+            return {"role": "system", "content": message.content if isinstance(message.content, str) else ""}
+
+        if message.role == "user":
+            if isinstance(message.content, str):
+                return {"role": "user", "content": message.content}
+            # multimodal or tool-result user message
+            content_blocks: List[Dict[str, Any]] = []
+            for block in message.content:
+                if block.type == "text":
+                    content_blocks.append({"type": "text", "text": block.text})
+                elif block.type == "image":
+                    if block.source:
+                        content_blocks.append(block.source)
+                elif block.type == "tool_result":
+                    item: Dict[str, Any] = {
+                        "role": "tool",
+                        "tool_call_id": block.tool_call_id,
+                        "content": block.text,
+                    }
+                    if block.name:
+                        item["name"] = block.name
+                    return item  # tool_result in OpenAI is a standalone role:"tool" message
+                elif block.type == "raw" and block.raw is not None:
+                    content_blocks.append(block.raw)
+            return {"role": "user", "content": content_blocks}
+
+        if message.role == "assistant":
+            if isinstance(message.content, str):
+                return {"role": "assistant", "content": message.content}
+            native: Dict[str, Any] = {"role": "assistant"}
+            for block in message.content:
+                if block.type == "text":
+                    native["content"] = block.text
+                elif block.type == "tool_use" and block.tool_call is not None:
+                    native.setdefault("tool_calls", []).append({
+                        "id": block.tool_call.id,
+                        "type": "function",
+                        "function": {
+                            "name": block.tool_call.name,
+                            "arguments": block.tool_call.arguments,
+                        },
+                    })
+                elif block.type == "raw" and block.raw is not None:
+                    native["content"] = block.raw
+            if "content" not in native:
+                native["content"] = None
+            return native
+
+        # role == "tool"
+        if isinstance(message.content, str):
+            return {"role": "tool", "content": message.content}
+        tool_id, tool_name, tool_content = "", "", ""
+        for block in message.content:
+            if block.type == "tool_result":
+                tool_id = block.tool_call_id
+                tool_name = block.name
+                tool_content = block.text
+        native_tool: Dict[str, Any] = {"role": "tool", "content": tool_content}
+        if tool_id:
+            native_tool["tool_call_id"] = tool_id
+        if tool_name:
+            native_tool["name"] = tool_name
+        return native_tool
+
+    @classmethod
+    def to_neutral_message(cls, native_message: Dict[str, Any]) -> LLMMessage:
+        """Converts an OpenAI-native message dict into a neutral LLMMessage.
+
+        Handles the three extra shapes that can appear in history after
+        multi-turn tool loops:
+
+        - system messages that use a standalone ``role:"system"`` dict
+        - assistant messages carrying ``tool_calls`` alongside ``content``
+        - ``role:"tool"`` messages for tool results
+        """
+        role = native_message.get("role", "user")
+        content = native_message.get("content", "")
+
+        if role == "system":
+            return LLMMessage(role="system", content=content if isinstance(content, str) else "")
+
+        if role == "user":
+            if isinstance(content, str):
+                return LLMMessage(role="user", content=content)
+            blocks = []
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict):
+                        item_type = item.get("type", "")
+                        if item_type == "text":
+                            blocks.append(MessageContentBlock(type="text", text=item.get("text", "")))
+                        elif item_type == "image_url":
+                            blocks.append(MessageContentBlock(type="image", source=item))
+                        else:
+                            blocks.append(MessageContentBlock(type="raw", raw=item))
+                    else:
+                        blocks.append(MessageContentBlock(type="text", text=str(item)))
+            return LLMMessage(role="user", content=blocks)
+
+        if role == "assistant":
+            tool_calls_raw = native_message.get("tool_calls") or []
+            if not tool_calls_raw:
+                return LLMMessage(role="assistant", content=content or "")
+
+            blocks: List[MessageContentBlock] = []
+            if content:
+                blocks.append(MessageContentBlock(type="text", text=content))
+            for tc in tool_calls_raw:
+                fn = tc.get("function", {})
+                blocks.append(MessageContentBlock(
+                    type="tool_use",
+                    tool_call=ToolCall(
+                        id=tc.get("id", ""),
+                        name=fn.get("name", ""),
+                        arguments=fn.get("arguments", ""),
+                    ),
+                ))
+            return LLMMessage(role="assistant", content=blocks)
+
+        if role == "tool":
+            return LLMMessage(role="tool", content=[
+                MessageContentBlock(
+                    type="tool_result",
+                    tool_call_id=native_message.get("tool_call_id", ""),
+                    name=native_message.get("name", ""),
+                    text=content if isinstance(content, str) else str(content),
+                )
+            ])
+
+        return LLMMessage(role="user", content=content if isinstance(content, str) else str(content))
+
+    @classmethod
+    def _build_user_message_content(cls, prompt: str,
+        images: Optional[List["PILImage.Image"]] = None
+    ) -> Union[str, List[Dict[str, Any]]]:
+        """Builds a neutral image block for base class compatibility."""
+        if not images:
+            return prompt
+        blocks = [{"type": "text", "text": prompt}]
+        for img in images:
+            if not isinstance(img, PILImage.Image):
+                raise TypeError("Each image must be a PIL.Image.Image instance.")
+            blocks.append({
+                "type": "image_url",
+                "image_url": {"url": convert_image_to_data_url(img)},
+            })
+        return blocks
 
     def generate(self,
             messages: List[Dict[str, str]],

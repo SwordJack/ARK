@@ -9,12 +9,12 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterator, List, Literal, Optional, Union, overload
+from typing import Any, Dict, Iterator, List, Literal, Optional, Tuple, Union, overload
 
 from PIL import Image as PILImage
 
 from isobase.core.image_service import convert_image_to_data_url
-from ..entities import LLMResponse
+from ..entities import LLMMessage, LLMMessageHistory, LLMResponse
 from ..callbacks import BaseLLMCallback
 
 
@@ -98,6 +98,53 @@ class BaseLLMClient(ABC):
             return self._ask_loop_stream(prompt, images, callbacks=callbacks, **kwargs)
         else:
             return self._ask_loop(prompt, images, callbacks=callbacks, **kwargs)
+
+    @classmethod
+    @abstractmethod
+    def from_neutral_message(cls, message: LLMMessage) -> Dict[str, Any]:
+        """Converts a provider-neutral message into provider-native message format.
+
+        Provider-native format is the dict shape accepted by this provider's
+        ``generate`` / ``generate_stream`` ``messages`` parameter.
+
+        Args:
+            message: A provider-neutral LLMMessage.
+
+        Returns:
+            A dict representing one message in this provider's native shape.
+        """
+        pass
+
+    @classmethod
+    @abstractmethod
+    def from_neutral_history(cls, history: LLMMessageHistory) -> Tuple[List[Dict[str, Any]], str]:
+        """Converts a neutral message history into this provider's native messages.
+
+        Subclasses must implement this method to handle provider-specific
+        history-level transformations — for example, merging consecutive
+        tool-result messages or extracting ``system``-role messages into a
+        separate return value.
+
+        Args:
+            history: A provider-neutral ``LLMMessageHistory``.
+
+        Returns:
+            A tuple of ``(messages, system_prompt)``.
+        """
+        pass
+
+    @classmethod
+    @abstractmethod
+    def to_neutral_message(cls, native_message: Dict[str, Any]) -> LLMMessage:
+        """Converts a provider-native message dict into a neutral LLMMessage.
+
+        Args:
+            native_message: One provider-native message dict.
+
+        Returns:
+            An equivalent LLMMessage in the provider-neutral shape.
+        """
+        pass
 
     @abstractmethod
     def _ask_loop(self,

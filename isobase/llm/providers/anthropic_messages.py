@@ -32,7 +32,7 @@ Key Anthropic-specific handling versus OpenAI:
 """
 
 from inspect import signature
-from json import dumps
+from json import dumps, loads as json_loads
 from typing import Any, Callable, Dict, Iterator, List, Literal, Optional, Tuple, Union, overload
 
 from anthropic import Anthropic, BadRequestError
@@ -46,7 +46,7 @@ from isobase.core.logger import LOGGER
 
 from .base import BaseLLMClient
 from ..callbacks import BaseLLMCallback
-from ..entities import LLMResponse, TokenUsage, ToolCall
+from ..entities import LLMMessage, LLMMessageHistory, LLMResponse, MessageContentBlock, TokenUsage, ToolCall
 from ..tools import FunctionTool, ToolSet
 
 
@@ -122,6 +122,249 @@ class AnthropicMessages(BaseLLMClient):
         }
 
         LOGGER.info(f"AnthropicMessages initialized (model: {default_model})")
+
+    # --- neutral / native message conversion ---------------------------------
+
+    @classmethod
+    def from_neutral_history(cls, history: LLMMessageHistory) -> Tuple[List[Dict[str, Any]], str]:
+        """Converts a full neutral history into an Anthropic-native messages list.
+
+        Merges consecutive role:"tool" messages (neutral's convention for
+        individual tool results from OpenAI) into a single user message
+        containing all ``tool_result`` blocks, which is the shape the
+        Anthropic Messages API requires.
+
+        Leading ``role:"system"`` messages are extracted into the returned
+        ``system_prompt`` string so callers can pass it via the top-level
+        ``system`` parameter — Anthropic does not accept ``system`` as a
+        message role.
+
+        Returns:
+            A tuple of ``(messages, system_prompt)`` where *system_prompt*
+            is the content of the first ``system``-role neutral message, or
+            an empty string.
+        """
+        result: List[Dict[str, Any]] = []
+        pending_tool_results: List[Dict[str, Any]] = []
+        system_prompt = ""
+        for neutral in history.messages:
+            if neutral.role == "system":
+                if not system_prompt:
+                    system_prompt = neutral.content if isinstance(neutral.content, str) else ""
+                continue
+            if neutral.role == "tool":
+                native = cls.__tool_message_to_tool_result_blocks(neutral)
+                pending_tool_results.extend(native)
+                continue
+            # Flush any buffered tool results from prior messages.
+            if pending_tool_results:
+                result.append({"role": "user", "content": pending_tool_results})
+                pending_tool_results = []
+            result.append(cls.from_neutral_message(neutral))
+        if pending_tool_results:
+            result.append({"role": "user", "content": pending_tool_results})
+        return result, system_prompt
+
+    @classmethod
+    def __tool_message_to_tool_result_blocks(cls,
+        message: LLMMessage,
+    ) -> List[Dict[str, Any]]:
+        """Converts a neutral role:"tool" message into Anthropic tool_result blocks."""
+        blocks: List[Dict[str, Any]] = []
+        if isinstance(message.content, str):
+            blocks.append({"type": "tool_result", "tool_use_id": "", "content": message.content})
+            return blocks
+        for block in message.content:
+            if block.type == "tool_result":
+                tr: Dict[str, Any] = {
+                    "type": "tool_result",
+                    "tool_use_id": block.tool_call_id,
+                    "content": block.text or "",
+                }
+                if block.is_error:
+                    tr["is_error"] = True
+                blocks.append(tr)
+        return blocks
+
+    @classmethod
+    def from_neutral_message(cls, message: LLMMessage) -> Dict[str, Any]:
+        """Converts a provider-neutral message into an Anthropic-native dict.
+
+        Anthropic never sends ``system`` inside ``messages`` — the caller is
+        expected to extract that entry and pass it via the top-level
+        ``system`` parameter instead.
+        """
+        if message.role == "system":
+            return {"role": "system", "content": message.content if isinstance(message.content, str) else ""}
+
+        if message.role == "user":
+            if isinstance(message.content, str):
+                return {"role": "user", "content": message.content}
+            native_blocks: List[Dict[str, Any]] = []
+            tool_results: List[Dict[str, Any]] = []
+            for block in message.content:
+                if block.type == "text":
+                    native_blocks.append({"type": "text", "text": block.text})
+                elif block.type == "image":
+                    if block.source:
+                        native_blocks.append(block.source)
+                elif block.type == "tool_result":
+                    tr: Dict[str, Any] = {
+                        "type": "tool_result",
+                        "tool_use_id": block.tool_call_id,
+                        "content": block.text or "",
+                    }
+                    if block.is_error:
+                        tr["is_error"] = True
+                    tool_results.append(tr)
+                elif block.type == "raw" and block.raw is not None:
+                    native_blocks.append(block.raw)
+            # Anthropic tool results live inside a user-message; normal text
+            # and tool results are mutually exclusive blocks.
+            if tool_results and not native_blocks:
+                return {"role": "user", "content": tool_results}
+            if tool_results:
+                native_blocks.extend(tool_results)
+            return {"role": "user", "content": native_blocks}
+
+        if message.role == "assistant":
+            if isinstance(message.content, str):
+                return {"role": "assistant", "content": message.content}
+            blocks: List[Dict[str, Any]] = []
+            for block in message.content:
+                if block.type == "text":
+                    blocks.append({"type": "text", "text": block.text})
+                elif block.type == "tool_use" and block.tool_call is not None:
+                    blocks.append({
+                        "type": "tool_use",
+                        "id": block.tool_call.id,
+                        "name": block.tool_call.name,
+                        "input": json_loads(block.tool_call.arguments) if block.tool_call.arguments else {},
+                    })
+                elif block.type == "raw" and block.raw is not None:
+                    blocks.append(block.raw)
+            return {"role": "assistant", "content": blocks}
+
+        # role == "tool" — translate to tool_result inside a user message
+        if isinstance(message.content, str):
+            return {
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": "",
+                    "content": message.content,
+                }],
+            }
+        blocks = []
+        for block in (message.content if isinstance(message.content, list) else []):
+            if block.type == "tool_result":
+                tr_dict: Dict[str, Any] = {
+                    "type": "tool_result",
+                    "tool_use_id": block.tool_call_id,
+                    "content": block.text or "",
+                }
+                if block.is_error:
+                    tr_dict["is_error"] = True
+                blocks.append(tr_dict)
+            elif block.type == "text":
+                blocks.append({"type": "text", "text": block.text})
+            elif block.type == "raw" and block.raw is not None:
+                blocks.append(block.raw)
+        return {"role": "user", "content": blocks or message.content}
+
+    @classmethod
+    def to_neutral_message(cls, native_message: Dict[str, Any]) -> LLMMessage:
+        """Converts an Anthropic-native message dict into a neutral LLMMessage.
+
+        Handles the key differences from the OpenAI shape:
+
+        - ``system`` entries in the message list denote operator-level context
+          that was injected mid-conversation (a separate concept from the
+          top-level ``system`` parameter).
+        - Assistant content is a list of typed blocks (text / tool_use / thinking).
+          Thinking blocks are captured as ``raw`` since the neutral layer
+          does not yet model them natively.
+        - Tool results are ``tool_result`` blocks inside a user message,
+          never a standalone ``role:"tool"`` message.
+        """
+        role = native_message.get("role", "user")
+        content = native_message.get("content", "")
+
+        if role == "system":
+            return LLMMessage(role="system", content=content if isinstance(content, str) else "")
+
+        if role == "user":
+            if isinstance(content, str):
+                return LLMMessage(role="user", content=content)
+            blocks: List[MessageContentBlock] = []
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict):
+                        item_type = item.get("type", "")
+                        if item_type == "tool_result":
+                            blocks.append(MessageContentBlock(
+                                type="tool_result",
+                                tool_call_id=item.get("tool_use_id", ""),
+                                text=item.get("content", ""),
+                                is_error=item.get("is_error", False),
+                            ))
+                        elif item_type == "text":
+                            blocks.append(MessageContentBlock(type="text", text=item.get("text", "")))
+                        elif item_type == "image":
+                            blocks.append(MessageContentBlock(type="image", source=item))
+                        else:
+                            blocks.append(MessageContentBlock(type="raw", raw=item))
+                    else:
+                        blocks.append(MessageContentBlock(type="text", text=str(item)))
+            return LLMMessage(role="user", content=blocks)
+
+        if role == "assistant":
+            if isinstance(content, str):
+                return LLMMessage(role="assistant", content=content)
+            blocks = []
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict):
+                        item_type = item.get("type", "")
+                        if item_type == "text":
+                            blocks.append(MessageContentBlock(type="text", text=item.get("text", "")))
+                        elif item_type == "tool_use":
+                            blocks.append(MessageContentBlock(
+                                type="tool_use",
+                                tool_call=ToolCall(
+                                    id=item.get("id", ""),
+                                    name=item.get("name", ""),
+                                    arguments=dumps(item.get("input", {})),
+                                ),
+                            ))
+                        elif item_type == "thinking":
+                            blocks.append(MessageContentBlock(type="raw", raw=item))
+                        else:
+                            blocks.append(MessageContentBlock(type="raw", raw=item))
+                    elif hasattr(item, "type"):
+                        item_type = getattr(item, "type", "")
+                        if item_type == "text":
+                            blocks.append(MessageContentBlock(type="text",
+                                text=getattr(item, "text", "")))
+                        elif item_type == "tool_use":
+                            blocks.append(MessageContentBlock(
+                                type="tool_use",
+                                tool_call=ToolCall(
+                                    id=getattr(item, "id", ""),
+                                    name=getattr(item, "name", ""),
+                                    arguments=dumps(getattr(item, "input", {})),
+                                ),
+                            ))
+                        else:
+                            blocks.append(MessageContentBlock(type="raw", raw=item))
+            return LLMMessage(role="assistant", content=blocks)
+
+        # role == "tool" (unusual in Anthropic, but handle)
+        if isinstance(content, str):
+            return LLMMessage(role="tool", content=[
+                MessageContentBlock(type="tool_result", text=content),
+            ])
+        return LLMMessage(role="user", content=content if isinstance(content, str) else str(content))
 
     @classmethod
     def build_user_message_content(

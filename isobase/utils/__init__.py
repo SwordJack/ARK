@@ -9,5 +9,6 @@
 
 # Here put the import lib.
 from .json_fixer import JsonFixer
+from .markdown_fixer import MarkdownFixer
 
-__all__ = ["JsonFixer"]
+__all__ = ["JsonFixer", "MarkdownFixer"]
