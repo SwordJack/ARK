@@ -360,6 +360,20 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
         # Use any model class — they all share the same SqlDbService.
         KnowledgeBaseModel.execute_transaction(_bulk_insert)
 
+    def list_chunks(self, kb_id: str) -> List[KnowledgeChunk]:
+        """Lists all chunks in a knowledge base.
+
+        Args:
+            kb_id: Knowledge base identifier.
+
+        Returns:
+            List of chunks. May be empty.
+        """
+        rows = KnowledgeChunkModel.find_many(
+            KnowledgeChunkModel.knowledge_base_id == kb_id,
+        )
+        return [self._model_to_chunk(row) for row in rows]
+
     def search(
         self,
         kb_id: str,

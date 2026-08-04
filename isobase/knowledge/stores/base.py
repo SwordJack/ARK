@@ -160,6 +160,18 @@ class BaseKnowledgeStore(ABC):
         pass
 
     @abstractmethod
+    def list_chunks(self, kb_id: str) -> List[KnowledgeChunk]:
+        """Lists all chunks in a knowledge base.
+
+        Args:
+            kb_id: Knowledge base identifier.
+
+        Returns:
+            List of chunks. May be empty.
+        """
+        pass
+
+    @abstractmethod
     def search(
         self,
         kb_id: str,

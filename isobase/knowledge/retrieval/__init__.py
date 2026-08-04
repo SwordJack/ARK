@@ -12,6 +12,7 @@ from .base import BaseRetriever, DenseRetrievalItem
 from .dense import DenseRetriever, cosine_similarity
 from .pipeline import RetrievalPipeline
 from .reranker import BaseReranker, NoOpReranker
+from .sparse import SparseRetrievalItem, SparseRetriever, tokenize_text
 
 __all__ = [
     "BaseRetriever",
@@ -21,4 +22,7 @@ __all__ = [
     "RetrievalPipeline",
     "BaseReranker",
     "NoOpReranker",
+    "SparseRetrievalItem",
+    "SparseRetriever",
+    "tokenize_text",
 ]

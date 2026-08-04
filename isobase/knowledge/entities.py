@@ -23,11 +23,14 @@ class RetrievalOption:
             When None, defaults to top_k.
         metadata_filter: Chunk metadata equality filters. Only chunks whose
             metadata contains all key/value pairs are retained.
+        use_sparse: Whether to use sparse text retrieval instead of dense
+            vector retrieval. Defaults to False to preserve dense-only behavior.
     """
 
     top_k: int = 5
     candidate_k: Optional[int] = None
     metadata_filter: Dict[str, Any] = field(default_factory=dict)
+    use_sparse: bool = False
 
     def effective_candidate_k(self) -> int:
         """Returns the candidate count to use for the initial retrieval pass."""

@@ -1,12 +1,14 @@
 #! python3
 # -*- encoding: utf-8 -*-
-"""Tests for RetrievalOption, RetrievalPipeline, and reranker hooks.
+"""Tests for RetrievalOption, RetrievalPipeline, reranker hooks, and sparse retrieval.
 
 @File   :   test_pipeline.py
 @Created:   2026/08/04 21:50 (UTC+08:00)
 @Author :   SwordJack
 @Contact:   https://github.com/SwordJack/
 """
+
+import pytest
 
 from isobase.knowledge.entities import (
     KnowledgeBase,
@@ -213,3 +215,76 @@ def test_pipeline_with_custom_reranker():
     # Dense order: c0 (score 1.0), c1 (0.8), c2 (0.6)
     # Reverse: c2, c1, c0
     assert [r.chunk.id for r in results] == ["c2", "c1", "c0"]
+
+
+# ---- Sparse retrieval -----------------------------------------------------
+
+def test_pipeline_sparse_basic():
+    """Pipeline with use_sparse=True returns sparse results for text query."""
+    store = _seed_store()
+    pipeline = RetrievalPipeline(store)
+    query_embedding = [10.0, 0.0]  # ignored when sparse
+
+    results = pipeline.search(
+        "kb1",
+        query_embedding,
+        RetrievalOption(top_k=3, use_sparse=True),
+        query_text="chunk 0",
+    )
+    assert len(results) >= 1
+    assert results[0].score_source == "sparse"
+
+
+def test_pipeline_sparse_no_query_text_raises():
+    """Sparse mode requires query_text."""
+    store = _seed_store()
+    pipeline = RetrievalPipeline(store)
+
+    with pytest.raises(ValueError, match="query_text is required"):
+        pipeline.search(
+            "kb1",
+            [10.0, 0.0],
+            RetrievalOption(use_sparse=True),
+        )
+
+
+def test_pipeline_sparse_metadata_filter():
+    """Metadata filter works with sparse retrieval."""
+    store = _seed_store()
+    pipeline = RetrievalPipeline(store)
+
+    results = pipeline.search(
+        "kb1",
+        [10.0, 0.0],
+        RetrievalOption(top_k=5, use_sparse=True, metadata_filter={"key": "val0"}),
+        query_text="chunk",
+    )
+    assert len(results) == 1
+    assert results[0].chunk.id == "c0"
+    assert results[0].score_source == "sparse"
+
+
+def test_pipeline_sparse_empty_kb():
+    """Sparse retrieval on empty KB returns empty list."""
+    store = MemoryKnowledgeStore()
+    pipeline = RetrievalPipeline(store)
+
+    results = pipeline.search(
+        "nonexistent",
+        [10.0, 0.0],
+        RetrievalOption(use_sparse=True),
+        query_text="hello",
+    )
+    assert results == []
+
+
+def test_pipeline_default_dense_unchanged():
+    """Default pipeline without use_sparse keeps dense behavior."""
+    store = _seed_store()
+    pipeline = RetrievalPipeline(store)
+    query_embedding = [10.0, 0.0]
+
+    results = pipeline.search("kb1", query_embedding, RetrievalOption(top_k=3))
+    assert len(results) == 3
+    assert results[0].chunk.id == "c0"
+    assert results[0].score_source == "dense"

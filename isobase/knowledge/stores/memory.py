@@ -238,6 +238,20 @@ class MemoryKnowledgeStore(BaseKnowledgeStore):
             self.chunks[chunk.id] = chunk
             self.embeddings[chunk.id] = embedding
 
+    def list_chunks(self, kb_id: str) -> List[KnowledgeChunk]:
+        """Lists all chunks in a knowledge base.
+
+        Args:
+            kb_id: Knowledge base identifier.
+
+        Returns:
+            List of chunks. May be empty.
+        """
+        return [
+            chunk for chunk in self.chunks.values()
+            if chunk.knowledge_base_id == kb_id
+        ]
+
     def search(
         self,
         kb_id: str,

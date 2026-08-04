@@ -383,6 +383,18 @@ class MongoKnowledgeStore(BaseKnowledgeStore):
 
         KnowledgeBaseMongoModel.execute_transaction(_bulk_insert)
 
+    def list_chunks(self, kb_id: str) -> List[KnowledgeChunk]:
+        """Lists all chunks in a knowledge base.
+
+        Args:
+            kb_id: Knowledge base identifier.
+
+        Returns:
+            List of chunks. May be empty.
+        """
+        chunks = KnowledgeChunkMongoModel.find_many({"knowledge_base_id": kb_id})
+        return [self._model_to_chunk(c) for c in chunks]
+
     def search(
         self,
         kb_id: str,
