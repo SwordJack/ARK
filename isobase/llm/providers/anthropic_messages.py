@@ -46,7 +46,7 @@ from isobase.core.logger import LOGGER
 
 from .base import BaseLLMClient
 from ..callbacks import BaseLLMCallback
-from ..entities import LLMMessage, LLMResponse, MessageContentBlock, TokenUsage, ToolCall
+from ..entities import LLMMessage, LLMMessageHistory, LLMResponse, MessageContentBlock, TokenUsage, ToolCall
 from ..tools import FunctionTool, ToolSet
 
 
@@ -124,6 +124,52 @@ class AnthropicMessages(BaseLLMClient):
         LOGGER.info(f"AnthropicMessages initialized (model: {default_model})")
 
     # --- neutral / native message conversion ---------------------------------
+
+    @classmethod
+    def from_neutral_history(cls, history: LLMMessageHistory) -> List[Dict[str, Any]]:
+        """Converts a full neutral history into an Anthropic-native messages list.
+
+        Merges consecutive role:"tool" messages (neutral's convention for
+        individual tool results from OpenAI) into a single user message
+        containing all ``tool_result`` blocks, which is the shape the
+        Anthropic Messages API requires.
+        """
+        result: List[Dict[str, Any]] = []
+        pending_tool_results: List[Dict[str, Any]] = []
+        for neutral in history.messages:
+            if neutral.role == "tool":
+                native = cls.__tool_message_to_tool_result_blocks(neutral)
+                pending_tool_results.extend(native)
+                continue
+            # Flush any buffered tool results from prior messages.
+            if pending_tool_results:
+                result.append({"role": "user", "content": pending_tool_results})
+                pending_tool_results = []
+            result.append(cls.from_neutral_message(neutral))
+        if pending_tool_results:
+            result.append({"role": "user", "content": pending_tool_results})
+        return result
+
+    @classmethod
+    def __tool_message_to_tool_result_blocks(cls,
+        message: LLMMessage,
+    ) -> List[Dict[str, Any]]:
+        """Converts a neutral role:"tool" message into Anthropic tool_result blocks."""
+        blocks: List[Dict[str, Any]] = []
+        if isinstance(message.content, str):
+            blocks.append({"type": "tool_result", "tool_use_id": "", "content": message.content})
+            return blocks
+        for block in message.content:
+            if block.type == "tool_result":
+                tr: Dict[str, Any] = {
+                    "type": "tool_result",
+                    "tool_use_id": block.tool_call_id,
+                    "content": block.text or "",
+                }
+                if block.is_error:
+                    tr["is_error"] = True
+                blocks.append(tr)
+        return blocks
 
     @classmethod
     def from_neutral_message(cls, message: LLMMessage) -> Dict[str, Any]:

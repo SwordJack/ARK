@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterator, List, Literal, Optional, Union, overload
 from PIL import Image as PILImage
 
 from isobase.core.image_service import convert_image_to_data_url
-from ..entities import LLMMessage, LLMResponse
+from ..entities import LLMMessage, LLMMessageHistory, LLMResponse
 from ..callbacks import BaseLLMCallback
 
 
@@ -114,6 +114,22 @@ class BaseLLMClient(ABC):
             A dict representing one message in this provider's native shape.
         """
         pass
+
+    @classmethod
+    def from_neutral_history(cls, history: "LLMMessageHistory") -> List[Dict[str, Any]]:
+        """Converts a complete neutral history into a native messages list.
+
+        Subclasses may override this to merge consecutive tool-result
+        messages, which some providers require. The default implementation
+        converts each message independently via ``from_neutral_message``.
+
+        Args:
+            history: A provider-neutral message history.
+
+        Returns:
+            A list of provider-native message dicts.
+        """
+        return [cls.from_neutral_message(m) for m in history.messages]
 
     @classmethod
     @abstractmethod
