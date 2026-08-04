@@ -163,6 +163,8 @@ Manual live API smoke tests (not run by pytest) live in `test/llm/live/` — cop
 - `AnthropicMessages` provider: non-streaming, streaming, multi-turn tool calling, multimodal image input, extended thinking, top-level `system`, mandatory `max_tokens`, and resilience to compatible gateways that send `message_start.content: null`.
 - Neutral `FunctionTool` with bidirectional OpenAI/Anthropic schema conversion and a shared execution core (`ToolSet.execute_tool_calls` / `execute_tool_calls_anthropic`).
 - Knowledge-base search tool integration via `isobase.llm.tools.knowledge.create_knowledge_search_tool`.
+- `SearchTool` with dual-architecture internet search (native provider search + custom fallback via `TavilySearchProvider` / `BraveSearchProvider`).
+- `BaseLLMCallback` — execution callbacks for tracking tool progress in real time.
 - Unit tests mocking each SDK (`test/llm/providers/`), plus a manual live runner (`test/llm/live/`).
 
 ### Not yet done (future)

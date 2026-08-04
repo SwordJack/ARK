@@ -129,8 +129,14 @@ isobase/knowledge/
 │   └── mongo.py        # MongoDB-backed metadata + vectors
 ├── retrieval/
 │   ├── __init__.py
-│   ├── base.py         # BaseRetriever ABC
-│   └── dense.py        # Dense retriever (cosine similarity)
+│   ├── base.py         # BaseRetriever ABC + DenseRetrievalItem
+│   ├── dense.py        # Dense retriever (cosine similarity)
+│   ├── sparse.py       # Sparse retriever (BM25, pluggable tokenizer, stopwords)
+│   ├── pipeline.py     # RetrievalPipeline (dense/sparse/hybrid, metadata filter, top_k trim)
+│   ├── reranker.py     # BaseReranker ABC + NoOpReranker
+│   ├── rank_fusion.py  # RankFusion (RRF) + FusedResult
+│   └── providers/      # Provider-specific implementations
+│       └── openai_reranker.py
 ├── service.py          # KnowledgeBaseService
 ```
 
@@ -997,28 +1003,37 @@ isobase/utils/
 
 **Rationale:** AstrBot's retrieval layer combines FAISS dense retrieval, FTS5/BM25 sparse retrieval, RRF fusion, and optional rerank. That is a useful reference, but it is a larger architecture phase than Markdown chunking. IsoBase should keep dense-only retrieval as the default while designing the interfaces needed for optional enhancements.
 
-**Recommended sequence:**
+**Status:** ✅ 4A–4D completed. 4E (vector index backends) remains as future work.
 
-1. `RetrievalOption` / retrieval pipeline interface
-   - Distinguish `candidate_k` from final `top_k`
-   - Define metadata filters and score source semantics
-2. Optional rerank hook
-   - `BaseReranker` / `NoOpReranker`
-   - Provider-neutral; disabled by default
-3. Sparse retrieval
-   - Evaluate BM25 vs. SQLite FTS5 and tokenizer requirements
-   - Define backend capability behavior for memory / SQL / Mongo
-4. Fusion
-   - Add RRF only after dense and sparse retrieval both exist
-5. Vector index backends
-   - Evaluate pgvector, MongoDB Atlas Vector Search, and FAISS as performance backends
+**Completed (4A — Retrieval options / pipeline):**
 
-**Validation criteria:**
+1. ✅ `RetrievalOption` — `candidate_k`, `top_k`, `metadata_filter`, `use_sparse`, `use_hybrid`
+2. ✅ `RetrievalPipeline` — single entry point; dispatches to dense/sparse/hybrid modes
+3. ✅ `RetrievalResult.score_source` — `"dense"`, `"sparse"`, `"fused"`, `"rerank"`
 
-- Dense-only retrieval remains the default and keeps existing behavior
-- Store lifecycle contract remains stable
-- Hybrid / rerank features are optional and provider-neutral
-- Score semantics are explicit (`dense`, `sparse`, `fused`, `rerank`, etc.)
+**Completed (4B — Reranker hook):**
+
+1. ✅ `BaseReranker` / `NoOpReranker` — provider-neutral, disabled by default
+2. ✅ `OpenAIReranker` — OpenAI-compatible rerank provider (qwen3-rerank, etc.)
+
+**Completed (4C — Sparse retrieval):**
+
+1. ✅ `SparseRetriever` — pure Python BM25, zero external dependencies
+2. ✅ Pluggable `tokenizer` — `jieba.cut` injectable for CJK support
+3. ✅ Stopword support — `load_stopwords()`, `curated_stopwords()` (400+ EN/ZH entries)
+4. ✅ Configurable BM25 parameters (`k1`, `b`)
+
+**Completed (4D — RRF fusion):**
+
+1. ✅ `RankFusion` — Reciprocal Rank Fusion with configurable `k` (default 60)
+2. ✅ `FusedResult` — dataclass tracking provenance from both legs
+3. ✅ `RetrievalPipeline._search_hybrid()` — dense + sparse → RRF → rerank
+
+**Remaining (4E — Vector index backends):**
+
+1. [ ] Evaluate pgvector for PostgreSQL
+2. [ ] Evaluate MongoDB Atlas Vector Search
+3. [ ] Evaluate FAISS as local-file performance backend
 
 ### Phase 5: Document Parsers
 
@@ -1599,10 +1614,10 @@ def test_e2e_index_and_retrieve():
 
 ### Phase 4 (Retrieval Enhancement) Success Criteria
 
-- [ ] Hybrid / rerank features are optional and provider-neutral
-- [ ] Score semantics are explicit (`dense`, `sparse`, `fused`, `rerank`, etc.)
-- [ ] Dense-only retrieval remains the default and keeps existing behavior
-- [ ] Store lifecycle contract remains stable
+- [x] Hybrid / rerank features are optional and provider-neutral
+- [x] Score semantics are explicit (`dense`, `sparse`, `fused`, `rerank`, etc.)
+- [x] Dense-only retrieval remains the default and keeps existing behavior
+- [x] Store lifecycle contract remains stable
 
 ## 14. References
 

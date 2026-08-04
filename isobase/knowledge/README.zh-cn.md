@@ -217,7 +217,12 @@ isobase/knowledge/
 │   ├── __init__.py     # 检索模块导出
 │   ├── base.py         # BaseRetriever 抽象基类 + DenseRetrievalItem
 │   ├── dense.py        # 稠密向量检索器（余弦相似度）
-│   └── pipeline.py     # RetrievalPipeline（candidate_k, metadata filter, top_k trim）
+│   ├── sparse.py       # 稀疏检索器（BM25，可插拔 tokenizer，停用词）
+│   ├── pipeline.py     # RetrievalPipeline（dense/sparse/hybrid，metadata filter，top_k trim）
+│   ├── reranker.py     # BaseReranker 抽象基类 + NoOpReranker
+│   ├── rank_fusion.py  # RankFusion（RRF 融合）+ FusedResult
+│   └── providers/      # 厂商特定实现
+│       └── openai_reranker.py
 ├── service.py          # KnowledgeBaseService 编排
 └── tools.py            # LLM 工具包装器
 ```
@@ -258,19 +263,90 @@ isobase/knowledge/
 - 块内容
 - 相似度分数
 - 父文档引用
-- 分数来源（``"dense"``、``"sparse"``、``"fused"``、``"rerank"``）
+- 分数来源（`"dense"`、`"sparse"`、`"fused"`、`"rerank"`）
 
 ### 检索选项 (RetrievalOption)
 
 控制检索行为：
 
-- ``top_k`` — 返回结果数量（默认 5）
-- ``candidate_k`` — 最终筛选前获取的候选数（默认等于 ``top_k``）
-- ``metadata_filter`` — 块元数据等值过滤
+- `top_k` — 返回结果数量（默认 5）
+- `candidate_k` — 最终筛选前获取的候选数（默认等于 `top_k`）
+- `metadata_filter` — 块元数据等值过滤
+- `use_sparse` — 使用 BM25 稀疏检索代替稠密检索（默认 `False`）
+- `use_hybrid` — 双路稠密 + 稀疏检索，通过 RRF 融合（默认 `False`）
 
-### 检索管道 (RetrievalPipeline)
+### 检索管线 (RetrievalPipeline)
 
-编排检索流程：从存储获取候选 → 应用 metadata filter → 裁剪到 ``top_k``。管道是检索逻辑的**唯一入口点**——存储后端只需提供 ``search(kb_id, query_embedding, top_k)``，无需关心 metadata filter 或 candidate/final_k。
+编排检索流程：从存储获取候选 → 应用 metadata filter → （可选）rerank → 返回 `top_k`。管线是检索逻辑的**唯一入口点**——存储后端只需提供 `search(kb_id, query_embedding, top_k)`，无需关心 metadata filter、candidate/final_k 或检索模式。
+
+**检索模式：**
+
+| 模式           | 选项                                 | 说明                                                 |
+| -------------- | ------------------------------------ | ---------------------------------------------------- |
+| 纯稠密（默认） | `use_sparse=False, use_hybrid=False` | 余弦相似度向量检索                                   |
+| 纯稀疏         | `use_sparse=True`                    | BM25 关键词匹配（需要 `query_text`）                 |
+| 混合检索       | `use_hybrid=True`                    | 稠密 + 稀疏 → RRF 融合 → rerank（需要 `query_text`） |
+
+### 稀疏检索 (BM25)
+
+`SparseRetriever` 提供零外部依赖的关键词检索：
+
+```python
+from isobase.knowledge.retrieval import SparseRetriever, curated_stopwords
+
+retriever = SparseRetriever(
+    k1=1.5,
+    b=0.75,
+    stopwords=curated_stopwords(),  # 400+ 精选中英文停用词
+)
+results = retriever.retrieve("python 装饰器", items, top_k=5)
+```
+
+**特性：**
+
+- 纯 Python BM25 — 零外部依赖
+- 可插拔 `tokenizer` — 可注入 `jieba.cut` 支持中文分词
+- 内置精选中英文停用词表
+- 可配置 BM25 参数（`k1`、`b`）
+
+### 倒数排名融合 (RRF)
+
+`RankFusion` 类按排名位置合并稠密和稀疏结果：
+
+```python
+from isobase.knowledge.retrieval import RankFusion
+
+fusion = RankFusion(k=60)  # 平滑常数
+fused = fusion.fuse(dense_results, sparse_results, top_k=20)
+# 融合结果 score_source="fused"
+```
+
+### 重排序器钩子 (Reranker Hook)
+
+通过 `BaseReranker` 接口实现检索后重排序：
+
+```python
+from isobase.knowledge.retrieval.providers import OpenAIReranker
+
+reranker = OpenAIReranker(
+    api_key="...",
+    base_url="https://.../compatible-api/v1",
+    model="qwen3-rerank",
+)
+pipeline = RetrievalPipeline(store, reranker=reranker)
+# 结果 score_source="rerank"
+```
+
+### 分数来源语义
+
+每个 `RetrievalResult` 携带明确的 `score_source`：
+
+| 来源       | 含义                      |
+| ---------- | ------------------------- |
+| `"dense"`  | 余弦相似度（嵌入向量）    |
+| `"sparse"` | BM25 关键词相关性分数     |
+| `"fused"`  | 稠密 + 稀疏的倒数排名融合 |
+| `"rerank"` | 模型重排序器分数          |
 
 ## 分块策略
 
@@ -410,14 +486,15 @@ store = MongoKnowledgeStore(mongo_service)
 
 ## 路线图
 
-### Phase 1: MVP（当前）
+### Phase 1: MVP
 
-- ✅ 核心接口
-- ✅ 固定大小分块器
-- ✅ OpenAI 兼容嵌入客户端
-- ✅ 内存存储
-- ✅ KnowledgeBaseService
-- ✅ LLM 工具集成
+- ✅ 核心接口（`entities.py`）
+- ✅ 固定大小分块器（`FixedSizeChunker`）
+- ✅ OpenAI 兼容嵌入客户端（支持 `dimensions` 自动检测）
+- ✅ `ModelRegistry` — 嵌入模型注册表，支持 lazy 维度获取
+- ✅ 内存存储（`MemoryKnowledgeStore`）
+- ✅ `KnowledgeBaseService` — 高层索引 + 检索编排
+- ✅ LLM 工具集成（`create_knowledge_search_tool`）
 
 ### Phase 2: 持久化
 
@@ -425,34 +502,47 @@ store = MongoKnowledgeStore(mongo_service)
 - ✅ MongoDB 后端存储 (`MongoKnowledgeStore`)
 - ✅ 生命周期 API: 文档和知识库的 `get` / `list` / `delete`
 - ✅ `KnowledgeBaseService` 构造函数 `embed_batch_size`
+- ✅ 共享 store 契约测试（27 项，参数化覆盖 memory / SQL / Mongo）
 - [ ] 模式迁移
-- [ ] 向量存储优化（pgvector, MongoDB Atlas Vector Search）
 
-### Phase 3: 增强检索
+### Phase 3: Markdown 结构感知分块
 
-- ✅ ``RetrievalOption`` — ``candidate_k``、metadata filter、``top_k`` 控制
-- ✅ ``RetrievalPipeline`` — 检索流程的唯一入口
-- ✅ ``RetrievalResult.score_source`` — 明确分数语义（``"dense"``）
-- [ ] 混合检索（稠密 + 稀疏）
-- [ ] BM25 稀疏检索器
-- [ ] RRF（倒数排名融合）
-- [ ] 重排序器接口
+- ✅ `ChunkSection(content, metadata)` 返回类型，`BaseChunker.chunk() → List[ChunkSection]`
+- ✅ `FixedSizeChunker` — 返回带 `chunk_strategy: "fixed"` 的 `ChunkSection`
+- ✅ `MarkdownChunker` — ATX 标题感知分块，附带 `heading_path` 追踪
+- ✅ `TextFixer.normalize()` — BOM 去除、行尾统一、ATX 间距规范化
+- ✅ `TextFixer.extract_front_matter()` — YAML 前置元数据提取
+- ✅ `KnowledgeBaseService.index_text()` — 将 chunker 元数据存入 `KnowledgeChunk`
+- ✅ 42 个单元测试（6 chunking + 36 text fixer）
 
-### Phase 4: 文档解析器
+### Phase 4: 检索增强
+
+- ✅ `RetrievalOption` — `candidate_k`、`top_k`、metadata filter、`use_sparse`、`use_hybrid`
+- ✅ `RetrievalPipeline` — dense / sparse / hybrid 检索的唯一入口
+- ✅ `RetrievalResult.score_source` — 明确分数语义（`"dense"`、`"sparse"`、`"fused"`、`"rerank"`）
+- ✅ `SparseRetriever` — BM25 关键词检索，可插拔 tokenizer + 停用词
+- ✅ `RankFusion` — 倒数排名融合（RRF），合并稠密 + 稀疏结果
+- ✅ `BaseReranker` / `NoOpReranker` — 重排序器钩子接口（可选，默认无操作）
+- ✅ `OpenAIReranker` — OpenAI 兼容重排序提供商（qwen3-rerank 等）
+- ✅ `list_chunks(kb_id)` — store 契约扩展（sparse / hybrid 检索需要）
+- ✅ 62 个检索单元测试（dense, sparse, pipeline, reranker, RRF）
+
+### Phase 5: 文档解析器
 
 - [ ] 文本解析器
-- [ ] Markdown 解析器
 - [ ] PDF 提取
 - [ ] 网页提取
 
-### Phase 5: 高级功能
+### Phase 6: 高级功能
 
 - [ ] 异步/批量索引
 - [ ] 增量更新
 - [ ] 多知识库搜索
 - ✅ 元数据过滤
-- [ ] ``candidate_k`` / ``final_k`` 管道化
+- ✅ 混合检索（稠密 + 稀疏 + RRF）
+- ✅ `candidate_k` / `top_k` 管线控制（`RetrievalOption.effective_candidate_k()`）
 - [ ] pgvector 迁移
+- [ ] MongoDB Atlas Vector Search
 
 ## 参考
 

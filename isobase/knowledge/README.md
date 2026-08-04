@@ -226,7 +226,12 @@ isobase/knowledge/
 │   ├── __init__.py     # Retrieval exports
 │   ├── base.py         # BaseRetriever ABC + DenseRetrievalItem
 │   ├── dense.py        # Dense retriever (cosine similarity)
-│   └── pipeline.py     # RetrievalPipeline (candidate_k, metadata filter, top_k trim)
+│   ├── sparse.py       # Sparse retriever (BM25, pluggable tokenizer, stopwords)
+│   ├── pipeline.py     # RetrievalPipeline (dense/sparse/hybrid, metadata filter, top_k trim)
+│   ├── reranker.py     # BaseReranker ABC + NoOpReranker
+│   ├── rank_fusion.py  # RankFusion (RRF) + FusedResult
+│   └── providers/      # Provider-specific implementations
+│       └── openai_reranker.py
 ├── service.py          # KnowledgeBaseService orchestration
 └── tools.py            # LLM tool wrappers
 ```
@@ -269,19 +274,90 @@ Search result containing:
 - Chunk content
 - Similarity score
 - Parent document reference
-- Score source (``"dense"``, ``"sparse"``, ``"fused"``, ``"rerank"``)
+- Score source (`"dense"`, `"sparse"`, `"fused"`, `"rerank"`)
 
 ### RetrievalOption
 
 Controls retrieval behavior:
 
-- ``top_k`` — number of results to return (default 5)
-- ``candidate_k`` — candidates to fetch before final trim (defaults to ``top_k``)
-- ``metadata_filter`` — chunk metadata equality filters
+- `top_k` — number of results to return (default 5)
+- `candidate_k` — candidates to fetch before final trim (defaults to `top_k`)
+- `metadata_filter` — chunk metadata equality filters
+- `use_sparse` — use BM25 sparse retrieval instead of dense (default `False`)
+- `use_hybrid` — dual dense + sparse retrieval via RRF fusion (default `False`)
 
 ### RetrievalPipeline
 
-Orchestrates retrieval flow: gather candidates from store → apply metadata filter → trim to ``top_k``. The pipeline is the **single entry point** for retrieval logic — store backends only provide ``search(kb_id, query_embedding, top_k)`` and don't need to know about metadata filters or candidate/final_k.
+Orchestrates retrieval flow: gather candidates from store → apply metadata filter → (optional) rerank → return `top_k`. The pipeline is the **single entry point** for retrieval logic — store backends only provide `search(kb_id, query_embedding, top_k)` and don't need to know about metadata filters, candidate/final_k, or retrieval modes.
+
+**Retrieval modes:**
+
+| Mode                 | Option                               | Description                                                  |
+| -------------------- | ------------------------------------ | ------------------------------------------------------------ |
+| Dense-only (default) | `use_sparse=False, use_hybrid=False` | Cosine similarity vector search                              |
+| Sparse-only          | `use_sparse=True`                    | BM25 keyword matching (requires `query_text`)                |
+| Hybrid               | `use_hybrid=True`                    | Dense + sparse → RRF fusion → rerank (requires `query_text`) |
+
+### Sparse Retrieval (BM25)
+
+The `SparseRetriever` provides keyword-based retrieval without external dependencies:
+
+```python
+from isobase.knowledge.retrieval import SparseRetriever, curated_stopwords
+
+retriever = SparseRetriever(
+    k1=1.5,
+    b=0.75,
+    stopwords=curated_stopwords(),  # 400+ curated EN/ZH stopwords
+)
+results = retriever.retrieve("python 装饰器", items, top_k=5)
+```
+
+**Features:**
+
+- Pure Python BM25 — zero external dependencies
+- Pluggable `tokenizer` — inject `jieba.cut` for CJK support
+- Built-in curated stopword list (English + Chinese)
+- Configurable BM25 parameters (`k1`, `b`)
+
+### Reciprocal Rank Fusion (RRF)
+
+The `RankFusion` class merges dense and sparse result lists by rank position:
+
+```python
+from isobase.knowledge.retrieval import RankFusion
+
+fusion = RankFusion(k=60)  # smoothing constant
+fused = fusion.fuse(dense_results, sparse_results, top_k=20)
+# fused results have score_source="fused"
+```
+
+### Reranker Hook
+
+Post-retrieval reranking via the `BaseReranker` interface:
+
+```python
+from isobase.knowledge.retrieval.providers import OpenAIReranker
+
+reranker = OpenAIReranker(
+    api_key="...",
+    base_url="https://.../compatible-api/v1",
+    model="qwen3-rerank",
+)
+pipeline = RetrievalPipeline(store, reranker=reranker)
+# results have score_source="rerank"
+```
+
+### Score Sources
+
+Each `RetrievalResult` carries an explicit `score_source`:
+
+| Source     | Meaning                                  |
+| ---------- | ---------------------------------------- |
+| `"dense"`  | Cosine similarity from embedding vectors |
+| `"sparse"` | BM25 keyword relevance score             |
+| `"fused"`  | Reciprocal Rank Fusion of dense + sparse |
+| `"rerank"` | Model-based reranker score               |
 
 ## Chunking Strategies
 
@@ -499,14 +575,15 @@ Follows existing patterns:
 
 ## Roadmap
 
-### Phase 1: MVP (Current)
+### Phase 1: MVP
 
-- ✅ Core interfaces
-- ✅ Fixed-size chunker
-- ✅ OpenAI-compatible embedding client
-- ✅ In-memory store
-- ✅ KnowledgeBaseService
-- ✅ LLM tool integration
+- ✅ Core interfaces (`entities.py`)
+- ✅ Fixed-size chunker (`FixedSizeChunker`)
+- ✅ OpenAI-compatible embedding client (with `dimensions` auto-detection)
+- ✅ `ModelRegistry` — embedding model registry with lazy dimensions fetch
+- ✅ In-memory store (`MemoryKnowledgeStore`)
+- ✅ `KnowledgeBaseService` — high-level indexing + retrieval orchestration
+- ✅ LLM tool integration (`create_knowledge_search_tool`)
 
 ### Phase 2: Persistence
 
@@ -514,34 +591,47 @@ Follows existing patterns:
 - ✅ MongoDB-backed store (`MongoKnowledgeStore`)
 - ✅ Lifecycle APIs: `get` / `list` / `delete` for documents and knowledge bases
 - ✅ `embed_batch_size` in `KnowledgeBaseService` constructor
+- ✅ Shared store contract tests (27 items, parametrized across memory / SQL / Mongo)
 - [ ] Schema migrations
-- [ ] Vector storage optimization (pgvector, MongoDB Atlas Vector Search)
 
-### Phase 3: Enhanced Retrieval
+### Phase 3: Markdown Structure-Aware Chunking
 
-- ✅ ``RetrievalOption`` — ``candidate_k``, metadata filter, ``top_k`` controls
-- ✅ ``RetrievalPipeline`` — single entry point for retrieval flow
-- ✅ ``RetrievalResult.score_source`` — explicit score semantics (``"dense"``)
-- [ ] Hybrid retrieval (dense + sparse)
-- [ ] BM25 sparse retriever
-- [ ] RRF (Reciprocal Rank Fusion)
-- [ ] Reranker interface
+- ✅ `ChunkSection(content, metadata)` return type, `BaseChunker.chunk() → List[ChunkSection]`
+- ✅ `FixedSizeChunker` — returns `ChunkSection` with `chunk_strategy: "fixed"`
+- ✅ `MarkdownChunker` — ATX heading-aware splitter with `heading_path` tracking
+- ✅ `TextFixer.normalize()` — BOM removal, line ending unification, ATX spacing
+- ✅ `TextFixer.extract_front_matter()` — YAML front matter extraction
+- ✅ `KnowledgeBaseService.index_text()` — stores chunker-provided metadata on `KnowledgeChunk`
+- ✅ 42 unit tests (6 chunking + 36 text fixer)
 
-### Phase 4: Document Parsers
+### Phase 4: Retrieval Enhancement
+
+- ✅ `RetrievalOption` — `candidate_k`, `top_k`, metadata filter, `use_sparse`, `use_hybrid`
+- ✅ `RetrievalPipeline` — single entry point for dense / sparse / hybrid retrieval
+- ✅ `RetrievalResult.score_source` — explicit score semantics (`"dense"`, `"sparse"`, `"fused"`, `"rerank"`)
+- ✅ `SparseRetriever` — BM25 keyword retrieval with pluggable tokenizer + stopwords
+- ✅ `RankFusion` — Reciprocal Rank Fusion (RRF) for dense + sparse merging
+- ✅ `BaseReranker` / `NoOpReranker` — reranker hook interface (optional, default no-op)
+- ✅ `OpenAIReranker` — OpenAI-compatible rerank provider (qwen3-rerank, etc.)
+- ✅ `list_chunks(kb_id)` — store contract extension for sparse + hybrid retrieval
+- ✅ 62 retrieval unit tests (dense, sparse, pipeline, reranker, RRF)
+
+### Phase 5: Document Parsers
 
 - [ ] Text parser
-- [ ] Markdown parser
 - [ ] PDF extraction
 - [ ] Web page extraction
 
-### Phase 5: Advanced Features
+### Phase 6: Advanced Features
 
 - [ ] Async/batch indexing
 - [ ] Incremental updates
 - [ ] Multi-knowledge-base search
 - ✅ Metadata filtering
-- [ ] ``candidate_k`` / ``final_k`` in pipeline
+- ✅ Hybrid retrieval (dense + sparse + RRF)
+- ✅ `candidate_k` / `top_k` pipeline control (`RetrievalOption.effective_candidate_k()`)
 - [ ] pgvector migration
+- [ ] MongoDB Atlas Vector Search
 
 ## References
 
