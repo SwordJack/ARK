@@ -368,6 +368,62 @@ def test_history_with_tool_calls_roundtrip():
     assert tr_blocks[0].text == "22°C"
 
 
+def test_from_neutral_history_strips_system():
+    """from_neutral_history extracts leading system message to system_prompt."""
+    history = LLMMessageHistory()
+    history.append(LLMMessage(role="system", content="Be helpful."))
+    history.append(LLMMessage(role="user", content="Hello"))
+
+    msgs, system_prompt = AnthropicMessages.from_neutral_history(history)
+    assert system_prompt == "Be helpful."
+    assert len(msgs) == 1
+    assert msgs[0]["role"] == "user"
+
+
+def test_from_neutral_history_merges_tool_results():
+    """Consecutive tool messages are merged into one user message."""
+    history = LLMMessageHistory()
+    history.append(LLMMessage(role="user", content="Weather in Paris?"))
+    history.append(LLMMessage(role="assistant", content=[
+        MessageContentBlock(type="tool_use",
+            tool_call=ToolCall(id="c1", name="get_weather", arguments='{"city":"Paris"}')),
+    ]))
+    history.append(LLMMessage(role="tool", content=[
+        MessageContentBlock(type="tool_result", tool_call_id="c1", text="22°C"),
+    ]))
+    history.append(LLMMessage(role="tool", content=[
+        MessageContentBlock(type="tool_result", tool_call_id="c2", text="12:00"),
+    ]))
+
+    msgs, sp = AnthropicMessages.from_neutral_history(history)
+    assert sp == ""
+    # Should be 3 messages: user, assistant, user(merged tool_results)
+    assert len(msgs) == 3
+    # The merged user message should contain both tool_result blocks
+    merged = msgs[2]
+    assert merged["role"] == "user"
+    assert len(merged["content"]) == 2
+    assert merged["content"][0]["tool_use_id"] == "c1"
+    assert merged["content"][1]["tool_use_id"] == "c2"
+
+
+def test_base_from_neutral_history_extracts_system():
+    """from_neutral_history extracts leading system message into system_prompt."""
+    # The base default is tested via AnthropicMessages (all providers should
+    # behave the same way for system extraction — it's role-based, not
+    # provider-specific).
+    history = LLMMessageHistory()
+    history.append(LLMMessage(role="system", content="Rules."))
+    history.append(LLMMessage(role="user", content="Hi"))
+    history.append(LLMMessage(role="assistant", content="Hey"))
+
+    msgs, sp = AnthropicMessages.from_neutral_history(history)
+    assert sp == "Rules."
+    assert len(msgs) == 2
+    assert msgs[0]["role"] == "user"
+    assert msgs[1]["role"] == "assistant"
+
+
 def test_history_copy():
     """Shallow copy produces an independent history list."""
     history = LLMMessageHistory()

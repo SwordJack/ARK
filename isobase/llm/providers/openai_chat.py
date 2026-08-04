@@ -24,7 +24,7 @@ from isobase.core.image_service import convert_image_to_data_url
 from isobase.core.logger import LOGGER
 from .base import BaseLLMClient
 from ..callbacks import BaseLLMCallback
-from ..entities import LLMMessage, LLMResponse, MessageContentBlock, TokenUsage, ToolCall
+from ..entities import LLMMessage, LLMMessageHistory, LLMResponse, MessageContentBlock, TokenUsage, ToolCall
 from ..tools import FunctionTool, SearchTool, ToolSet
 
 
@@ -93,6 +93,24 @@ class OpenAIChat(BaseLLMClient):
         LOGGER.info(f"OpenAIChat initialized (model: {default_model})")
 
     # --- neutral / native message conversion ---------------------------------
+
+    @classmethod
+    def from_neutral_history(cls, history: LLMMessageHistory) -> Tuple[List[Dict[str, Any]], str]:
+        """Converts a neutral message history into OpenAI-native messages.
+
+        OpenAI keeps ``system`` as a regular message, so the default
+        extraction of the leading system prompt is applied simply to match
+        the common ``(messages, system_prompt)`` return shape.
+        """
+        messages: List[Dict[str, Any]] = []
+        system_prompt = ""
+        for m in history.messages:
+            if m.role == "system" and not system_prompt:
+                system_prompt = m.content if isinstance(m.content, str) else ""
+                messages.append({"role": "system", "content": system_prompt})
+                continue
+            messages.append(cls.from_neutral_message(m))
+        return messages, system_prompt
 
     @classmethod
     def from_neutral_message(cls, message: LLMMessage) -> Dict[str, Any]:

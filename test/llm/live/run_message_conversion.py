@@ -253,9 +253,11 @@ def run_cross_provider(openai_kwargs: Dict[str, Any],
             preview = str(types)
         print(f"  neutral {role}: {preview}")
 
-    anthropic_native_msgs = AnthropicMessages.from_neutral_history(
+    anthropic_native_msgs, system_prompt = AnthropicMessages.from_neutral_history(
         LLMMessageHistory(messages=neutral_messages))
-    print(f"\nConverted {len(anthropic_native_msgs)} messages to Anthropic-native format.")
+    print(f"\nConverted {len(anthropic_native_msgs)} messages to Anthropic-native format."
+          f"  system_prompt={system_prompt[:60] + '...' if system_prompt else '(none)'}")
+
     for msg in anthropic_native_msgs:
         role = msg.get("role", "?")
         content = msg.get("content")
@@ -275,6 +277,7 @@ def run_cross_provider(openai_kwargs: Dict[str, Any],
     ant_client = AnthropicMessages(
         tools=[WEATHER_TOOL, TIME_TOOL],
         messages=anthropic_native_msgs,
+        instructions=system_prompt,
         **anthropic_kwargs,
     )
 
@@ -354,10 +357,11 @@ def run_history_persistence(openai_kwargs: Dict[str, Any],
     reloaded = LLMMessageHistory.from_list(json.loads(saved_json))
     print(f"Reloaded {len(reloaded.messages)} messages.")
 
-    anthropic_msgs = AnthropicMessages.from_neutral_history(reloaded)
+    anthropic_msgs, system_prompt = AnthropicMessages.from_neutral_history(reloaded)
     ant_client = AnthropicMessages(
         tools=[WEATHER_TOOL],
         messages=anthropic_msgs,
+        instructions=system_prompt,
         **anthropic_kwargs,
     )
 

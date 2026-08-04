@@ -126,17 +126,32 @@ class AnthropicMessages(BaseLLMClient):
     # --- neutral / native message conversion ---------------------------------
 
     @classmethod
-    def from_neutral_history(cls, history: LLMMessageHistory) -> List[Dict[str, Any]]:
+    def from_neutral_history(cls, history: LLMMessageHistory) -> Tuple[List[Dict[str, Any]], str]:
         """Converts a full neutral history into an Anthropic-native messages list.
 
         Merges consecutive role:"tool" messages (neutral's convention for
         individual tool results from OpenAI) into a single user message
         containing all ``tool_result`` blocks, which is the shape the
         Anthropic Messages API requires.
+
+        Leading ``role:"system"`` messages are extracted into the returned
+        ``system_prompt`` string so callers can pass it via the top-level
+        ``system`` parameter — Anthropic does not accept ``system`` as a
+        message role.
+
+        Returns:
+            A tuple of ``(messages, system_prompt)`` where *system_prompt*
+            is the content of the first ``system``-role neutral message, or
+            an empty string.
         """
         result: List[Dict[str, Any]] = []
         pending_tool_results: List[Dict[str, Any]] = []
+        system_prompt = ""
         for neutral in history.messages:
+            if neutral.role == "system":
+                if not system_prompt:
+                    system_prompt = neutral.content if isinstance(neutral.content, str) else ""
+                continue
             if neutral.role == "tool":
                 native = cls.__tool_message_to_tool_result_blocks(neutral)
                 pending_tool_results.extend(native)
@@ -148,7 +163,7 @@ class AnthropicMessages(BaseLLMClient):
             result.append(cls.from_neutral_message(neutral))
         if pending_tool_results:
             result.append({"role": "user", "content": pending_tool_results})
-        return result
+        return result, system_prompt
 
     @classmethod
     def __tool_message_to_tool_result_blocks(cls,

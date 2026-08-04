@@ -9,7 +9,7 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterator, List, Literal, Optional, Union, overload
+from typing import Any, Dict, Iterator, List, Literal, Optional, Tuple, Union, overload
 
 from PIL import Image as PILImage
 
@@ -116,20 +116,22 @@ class BaseLLMClient(ABC):
         pass
 
     @classmethod
-    def from_neutral_history(cls, history: "LLMMessageHistory") -> List[Dict[str, Any]]:
-        """Converts a complete neutral history into a native messages list.
+    @abstractmethod
+    def from_neutral_history(cls, history: LLMMessageHistory) -> Tuple[List[Dict[str, Any]], str]:
+        """Converts a neutral message history into this provider's native messages.
 
-        Subclasses may override this to merge consecutive tool-result
-        messages, which some providers require. The default implementation
-        converts each message independently via ``from_neutral_message``.
+        Subclasses must implement this method to handle provider-specific
+        history-level transformations — for example, merging consecutive
+        tool-result messages or extracting ``system``-role messages into a
+        separate return value.
 
         Args:
-            history: A provider-neutral message history.
+            history: A provider-neutral ``LLMMessageHistory``.
 
         Returns:
-            A list of provider-native message dicts.
+            A tuple of ``(messages, system_prompt)``.
         """
-        return [cls.from_neutral_message(m) for m in history.messages]
+        pass
 
     @classmethod
     @abstractmethod
