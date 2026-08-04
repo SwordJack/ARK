@@ -12,7 +12,13 @@ from .base import BaseRetriever, DenseRetrievalItem
 from .dense import DenseRetriever, cosine_similarity
 from .pipeline import RetrievalPipeline
 from .reranker import BaseReranker, NoOpReranker
-from .sparse import SparseRetrievalItem, SparseRetriever, tokenize_text
+from .sparse import (
+    SparseRetrievalItem,
+    SparseRetriever,
+    curated_stopwords,
+    load_stopwords,
+    tokenize_text,
+)
 
 __all__ = [
     "BaseRetriever",
@@ -24,5 +30,7 @@ __all__ = [
     "NoOpReranker",
     "SparseRetrievalItem",
     "SparseRetriever",
+    "curated_stopwords",
+    "load_stopwords",
     "tokenize_text",
 ]

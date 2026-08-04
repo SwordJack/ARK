@@ -8,15 +8,21 @@
 @Contact:   https://github.com/SwordJack/
 """
 
+import tempfile
+
 import pytest
 
 from isobase.knowledge.entities import KnowledgeChunk, KnowledgeDocument
 from isobase.knowledge.retrieval import (
     SparseRetrievalItem,
     SparseRetriever,
+    curated_stopwords,
+    load_stopwords,
     tokenize_text,
 )
 
+
+# ---- tokenize_text ---------------------------------------------------------
 
 def test_tokenize_text():
     """Tokenize lowercases and extracts word tokens."""
@@ -25,11 +31,155 @@ def test_tokenize_text():
     assert tokenize_text("C++ is fun!") == ["c", "is", "fun"]
 
 
+# ---- load_stopwords --------------------------------------------------------
+
+def test_load_stopwords_from_file():
+    """Loads stopwords skipping blank lines and comments."""
+    content = """\n# header comment\nhello\nworld\n  spaced  \n\n"""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        f.write(content)
+        path = f.name
+
+    try:
+        sw = load_stopwords(path)
+        assert sw == frozenset({"hello", "world", "spaced"})
+    finally:
+        import os
+        os.unlink(path)
+
+
+def test_load_stopwords_lowercases():
+    """Stopwords are always lower-cased."""
+    content = "Hello\nWORLD\n"
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        f.write(content)
+        path = f.name
+
+    try:
+        sw = load_stopwords(path)
+        assert sw == frozenset({"hello", "world"})
+    finally:
+        import os
+        os.unlink(path)
+
+
+def test_curated_stopwords_is_non_empty():
+    """The shipped stopword set contains at least 50 entries."""
+    sw = curated_stopwords()
+    assert len(sw) >= 50
+    assert "the" in sw  # English
+    assert "的" in sw    # Chinese
+
+
+# ---- SparseRetriever — stopwords -------------------------------------------
+
+def test_sparse_retriever_filters_stopwords():
+    """Common stopwords are excluded from matching."""
+    retriever = SparseRetriever(stopwords=frozenset({"the", "is", "and"}))
+
+    chunk = KnowledgeChunk(
+        id="c1", document_id="d1", knowledge_base_id="kb1",
+        content="the cat is on the mat and it sleeps", index=0,
+    )
+    items = [SparseRetrievalItem(chunk=chunk)]
+
+    # "the", "is", "and" should be filtered — only "cat", "on", "mat", "sleeps" remain
+    results = retriever.retrieve("the cat and dog", items)
+    # "cat" matches
+    assert len(results) == 1
+    assert results[0].score > 0.0
+
+
+def test_sparse_retriever_stopwords_no_match():
+    """Query consisting entirely of stopwords returns empty."""
+    retriever = SparseRetriever(stopwords=frozenset({"the", "a", "is"}))
+    chunk = KnowledgeChunk(
+        id="c1", document_id="d1", knowledge_base_id="kb1",
+        content="the cat", index=0,
+    )
+    items = [SparseRetrievalItem(chunk=chunk)]
+
+    results = retriever.retrieve("the a is", items)
+    assert results == []
+
+
+def test_sparse_retriever_curated_stopwords():
+    """Using curated_stopwords() reduces noise."""
+    retriever = SparseRetriever(stopwords=curated_stopwords())
+
+    chunk1 = KnowledgeChunk(
+        id="c1", document_id="d1", knowledge_base_id="kb1",
+        content="machine learning is about algorithms", index=0,
+    )
+    chunk2 = KnowledgeChunk(
+        id="c2", document_id="d1", knowledge_base_id="kb1",
+        content="deep learning and neural networks", index=1,
+    )
+    items = [
+        SparseRetrievalItem(chunk=chunk1),
+        SparseRetrievalItem(chunk=chunk2),
+    ]
+
+    results = retriever.retrieve("deep learning", items)
+    assert len(results) >= 1
+    # chunk2 should rank first — "deep" + "learning" match
+    assert results[0].chunk.id == "c2"
+
+
+# ---- SparseRetriever — pluggable tokenizer ---------------------------------
+
+def test_sparse_retriever_custom_tokenizer():
+    """A custom tokenizer can be injected (e.g. character n-grams)."""
+    def char_bigrams(text: str) -> list[str]:
+        text = text.lower().replace(" ", "")
+        return [text[i:i + 2] for i in range(len(text) - 1)]
+
+    retriever = SparseRetriever(tokenizer=char_bigrams)
+    chunk1 = KnowledgeChunk(
+        id="c1", document_id="d1", knowledge_base_id="kb1",
+        content="hello", index=0,
+    )
+    chunk2 = KnowledgeChunk(
+        id="c2", document_id="d1", knowledge_base_id="kb1",
+        content="help me", index=1,
+    )
+    items = [
+        SparseRetrievalItem(chunk=chunk1),
+        SparseRetrievalItem(chunk=chunk2),
+    ]
+
+    # "he" appears in both, "el" appears in both, but "ll" only in c1
+    results = retriever.retrieve("hello", items)
+    assert len(results) >= 1
+    assert results[0].chunk.id == "c1"
+
+
+def test_sparse_retriever_tokenizer_with_stopwords():
+    """Tokenizer and stopwords compose correctly."""
+    retriever = SparseRetriever(
+        tokenizer=lambda t: t.lower().split(),
+        stopwords=frozenset({"the", "a"}),
+    )
+    chunk = KnowledgeChunk(
+        id="c1", document_id="d1", knowledge_base_id="kb1",
+        content="a quick brown fox", index=0,
+    )
+    items = [SparseRetrievalItem(chunk=chunk)]
+
+    results = retriever.retrieve("the quick", items)
+    # "the" filtered, "quick" matches
+    assert len(results) == 1
+    assert results[0].score > 0.0
+
+
+# ---- SparseRetriever — core BM25 semantics ----------------------------------
+
 def test_sparse_retriever_empty_query():
     """Empty query returns empty."""
     retriever = SparseRetriever()
     chunk = KnowledgeChunk(
-        id="c1", document_id="d1", knowledge_base_id="kb1", content="hello world", index=0,
+        id="c1", document_id="d1", knowledge_base_id="kb1",
+        content="hello world", index=0,
     )
     items = [SparseRetrievalItem(chunk=chunk)]
     results = retriever.retrieve("", items)
@@ -47,13 +197,16 @@ def test_sparse_retriever_basic_ranking():
     """Chunks with matching terms score higher."""
     retriever = SparseRetriever()
     chunk1 = KnowledgeChunk(
-        id="c1", document_id="d1", knowledge_base_id="kb1", content="machine learning basics", index=0,
+        id="c1", document_id="d1", knowledge_base_id="kb1",
+        content="machine learning basics", index=0,
     )
     chunk2 = KnowledgeChunk(
-        id="c2", document_id="d1", knowledge_base_id="kb1", content="deep learning and neural networks", index=1,
+        id="c2", document_id="d1", knowledge_base_id="kb1",
+        content="deep learning and neural networks", index=1,
     )
     chunk3 = KnowledgeChunk(
-        id="c3", document_id="d1", knowledge_base_id="kb1", content="cooking recipes for dinner", index=2,
+        id="c3", document_id="d1", knowledge_base_id="kb1",
+        content="cooking recipes for dinner", index=2,
     )
     items = [
         SparseRetrievalItem(chunk=chunk1),
@@ -63,13 +216,9 @@ def test_sparse_retriever_basic_ranking():
 
     results = retriever.retrieve("deep learning", items, top_k=3)
 
-    # chunk2 should be first (exact match on "deep learning")
-    # chunk1 second (matches "learning")
-    # chunk3 last or absent (no match)
     assert len(results) >= 2
     assert results[0].chunk.id == "c2"
     assert results[0].score_source == "sparse"
-    # Sorted by descending score
     for i in range(len(results) - 1):
         assert results[i].score >= results[i + 1].score
 
@@ -94,7 +243,8 @@ def test_sparse_retriever_no_match_returns_empty():
     """When no chunk matches the query, returns empty."""
     retriever = SparseRetriever()
     chunk = KnowledgeChunk(
-        id="c1", document_id="d1", knowledge_base_id="kb1", content="hello world", index=0,
+        id="c1", document_id="d1", knowledge_base_id="kb1",
+        content="hello world", index=0,
     )
     items = [SparseRetrievalItem(chunk=chunk)]
 
@@ -107,7 +257,8 @@ def test_sparse_retriever_document_provenance():
     retriever = SparseRetriever()
     doc = KnowledgeDocument(id="d1", knowledge_base_id="kb1", title="Test Doc")
     chunk = KnowledgeChunk(
-        id="c1", document_id="d1", knowledge_base_id="kb1", content="hello world", index=0,
+        id="c1", document_id="d1", knowledge_base_id="kb1",
+        content="hello world", index=0,
     )
     items = [SparseRetrievalItem(chunk=chunk, document=doc)]
 
@@ -158,7 +309,6 @@ def test_sparse_retriever_idf_matters():
     items = [SparseRetrievalItem(chunk=c) for c in chunks]
     results = retriever.retrieve("the rare_term_3", items, top_k=3)
 
-    # "c3" has both "rare_term_3" and "the" — should rank first
     assert results[0].chunk.id == "c3"
 
 
@@ -167,7 +317,6 @@ def test_sparse_retriever_custom_bm25_params():
     retriever_default = SparseRetriever(k1=1.5, b=0.75)
     retriever_custom = SparseRetriever(k1=0.1, b=0.1)
 
-    # Vary document lengths so normalization differs across chunks
     chunks = [
         KnowledgeChunk(
             id="c0", document_id="d1", knowledge_base_id="kb1",
@@ -188,5 +337,4 @@ def test_sparse_retriever_custom_bm25_params():
     results_custom = retriever_custom.retrieve("python code", items)
 
     assert len(results_default) == len(results_custom)
-    # Scores differ due to different TF saturation and length normalization
     assert results_default[0].score != results_custom[0].score
