@@ -205,8 +205,9 @@ isobase/knowledge/
 │   ├── base.py         # BaseEmbeddingClient 抽象基类
 │   └── openai.py # OpenAI 兼容客户端
 ├── chunking/
-│   ├── base.py         # BaseChunker 抽象基类
-│   └── fixed.py        # 固定大小分块器（带重叠）
+│   ├── base.py         # BaseChunker ABC + ChunkSection
+│   ├── fixed.py        # 固定大小分块器（带重叠）
+│   └── markdown.py     # Markdown 标题感知分块器
 ├── stores/
 │   ├── base.py         # BaseKnowledgeStore 抽象基类
 │   ├── memory.py       # 内存存储（MVP）
@@ -290,18 +291,37 @@ chunks = chunker.chunk("长文本内容...",
 - 可能在句子中间分割
 - 不尊重文档结构
 
-### 未来策略
+### Markdown 分块器
 
-`BaseChunker.chunk()` 签名保留了 `**kwargs`，为未来的结构感知分块器预留通道：
+结构感知切分，按 ATX 标题边界切分并保留标题路径元数据：
 
 ```python
-# 计划中 — 尚未实现
-chunker.chunk(text,
-              chunk_size=500, chunk_overlap=50,
-              heading_path=["第 1 章", "1.1 概述"])
+from isobase.knowledge.chunking import MarkdownChunker
+
+chunker = MarkdownChunker(
+    chunk_size=500,    # 默认每块最大字符数
+    chunk_overlap=60,  # 默认重叠（仅在同一 section 内生效）
+)
+
+# 每个 chunk 携带 heading_path 元数据：
+chunks = chunker.chunk(markdown_text)
+# chunks[0].content       → "# 引言\n\n你好世界"
+# chunks[0].metadata      → {"chunk_strategy": "markdown",
+#                             "heading_path": ["引言"]}
 ```
 
-语义分块器产生的额外上下文（如标题路径）可以存入 `KnowledgeChunk.metadata`，具体键名约定见实体定义。
+**关键行为：**
+
+- **chunk_size 是上限** — 短标题 section 不会跨标题边界合并
+- **chunk_overlap 仅在 section 内部生效** — section 间为硬边界，无重叠
+- **超大 section** 由 `FixedSizeChunker` 进一步细分，子 chunk 继承相同 `heading_path`
+- **文本规范化**（BOM 去除、行尾统一、ATX 间距等）由 `isobase.utils.MarkdownFixer` 处理
+
+### 未来策略
+
+`BaseChunker.chunk()` 返回 `List[ChunkSection]` — 每个 section 携带 `content` 和
+`metadata`（strategy 名称、heading path 等）。`KnowledgeBaseService.index_text()`
+自动将这些 metadata 存入 `KnowledgeChunk.metadata`。
 
 ## 存储后端
 

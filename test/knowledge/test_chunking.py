@@ -19,8 +19,9 @@ def test_fixed_chunker_no_overlap():
     chunks = chunker.chunk(text)
 
     assert len(chunks) == 2
-    assert chunks[0] == "0123456789"
-    assert chunks[1] == "abcdefghij"
+    assert chunks[0].content == "0123456789"
+    assert chunks[1].content == "abcdefghij"
+    assert chunks[0].metadata == {"chunk_strategy": "fixed"}
 
 
 def test_fixed_chunker_with_overlap():
@@ -30,9 +31,9 @@ def test_fixed_chunker_with_overlap():
     chunks = chunker.chunk(text)
 
     assert len(chunks) == 3
-    assert chunks[0] == "0123456789"
-    assert chunks[1] == "789abcdefg"  # Overlaps with previous
-    assert chunks[2] == "efghij"
+    assert chunks[0].content == "0123456789"
+    assert chunks[1].content == "789abcdefg"  # Overlaps with previous
+    assert chunks[2].content == "efghij"
 
 
 def test_fixed_chunker_empty_text():
@@ -50,7 +51,7 @@ def test_fixed_chunker_text_shorter_than_chunk_size():
     chunks = chunker.chunk(text)
 
     assert len(chunks) == 1
-    assert chunks[0] == text
+    assert chunks[0].content == text
 
 
 def test_fixed_chunker_exact_chunk_size():
@@ -60,7 +61,7 @@ def test_fixed_chunker_exact_chunk_size():
     chunks = chunker.chunk(text)
 
     assert len(chunks) == 1
-    assert chunks[0] == text
+    assert chunks[0].content == text
 
 
 def test_fixed_chunker_invalid_parameters():
@@ -93,12 +94,12 @@ def test_fixed_chunker_long_text():
     # Expected chunks: ceil(200 / (50 - 10)) = ceil(200 / 40) = 5
     # Actually: 1st: 0-50, 2nd: 40-90, 3rd: 80-130, 4th: 120-170, 5th: 160-200
     assert len(chunks) == 5
-    assert all(len(chunk) <= 50 for chunk in chunks)
+    assert all(len(chunk.content) <= 50 for chunk in chunks)
 
     # Check overlap
     for i in range(len(chunks) - 1):
-        overlap_start = chunks[i][-10:]
-        overlap_end = chunks[i + 1][:10]
+        overlap_start = chunks[i].content[-10:]
+        overlap_end = chunks[i + 1].content[:10]
         assert overlap_start == overlap_end
 
 
@@ -114,13 +115,13 @@ def test_fixed_chunker_realistic_text():
     chunks = chunker.chunk(text)
 
     assert len(chunks) >= 2
-    assert all(len(chunk) <= 100 for chunk in chunks)
+    assert all(len(chunk.content) <= 100 for chunk in chunks)
 
     # Verify all text is covered
-    reconstructed = chunks[0]
+    reconstructed = chunks[0].content
     for i in range(1, len(chunks)):
         # Remove overlapping part
-        reconstructed += chunks[i][20:]
+        reconstructed += chunks[i].content[20:]
 
     assert len(reconstructed) >= len(text)
 
@@ -129,7 +130,7 @@ def test_fixed_chunker_override_size():
     """chunk_size can be overridden at call time."""
     chunker = FixedSizeChunker(chunk_size=100, chunk_overlap=0)
     chunks = chunker.chunk("0123456789abcdef", chunk_size=5)
-    assert chunks == ["01234", "56789", "abcde", "f"]
+    assert [chunk.content for chunk in chunks] == ["01234", "56789", "abcde", "f"]
 
 
 def test_fixed_chunker_override_overlap():
@@ -139,7 +140,7 @@ def test_fixed_chunker_override_overlap():
         "0123456789abcdefghij", chunk_size=10, chunk_overlap=3
     )
     assert len(chunks) == 3
-    assert chunks[1] == "789abcdefg"
+    assert chunks[1].content == "789abcdefg"
 
 
 def test_fixed_chunker_override_validation():
@@ -170,4 +171,4 @@ def test_fixed_chunker_accepts_kwargs():
     chunks = chunker.chunk(
         "0123456789", heading_path=["Ch1", "1.1"], separator="\n"
     )
-    assert chunks == ["0123456789"]
+    assert [chunk.content for chunk in chunks] == ["0123456789"]

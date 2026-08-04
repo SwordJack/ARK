@@ -214,8 +214,9 @@ isobase/knowledge/
 │   ├── base.py         # BaseEmbeddingClient ABC
 │   └── openai.py # OpenAI-compatible client
 ├── chunking/
-│   ├── base.py         # BaseChunker ABC
-│   └── fixed.py        # Fixed-size chunker with overlap
+│   ├── base.py         # BaseChunker ABC + ChunkSection
+│   ├── fixed.py        # Fixed-size chunker with overlap
+│   └── markdown.py     # Markdown heading-aware chunker
 ├── stores/
 │   ├── base.py         # BaseKnowledgeStore ABC
 │   ├── memory.py       # In-memory store (MVP)
@@ -306,21 +307,39 @@ chunks = chunker.chunk("Long text content...",
 - May split mid-sentence
 - Doesn't respect document structure
 
-### Future Strategies
+### Markdown Chunker
 
-The `BaseChunker.chunk()` signature accepts `**kwargs` so that
-structure-aware chunkers can receive additional parameters in the future:
+Structure-aware splitting that respects ATX heading boundaries
+and preserves heading path metadata:
 
 ```python
-# Planned — not yet implemented
-chunker.chunk(text,
-              chunk_size=500, chunk_overlap=50,
-              heading_path=["Chapter 1", "1.1 Overview"])
+from isobase.knowledge.chunking import MarkdownChunker
+
+chunker = MarkdownChunker(
+    chunk_size=500,    # Default max characters per chunk
+    chunk_overlap=60,  # Default overlap between chunks (within a section)
+)
+
+# Each chunk carries heading_path metadata:
+chunks = chunker.chunk(markdown_text)
+# chunks[0].content       → "# Introduction\n\nHello world"
+# chunks[0].metadata      → {"chunk_strategy": "markdown",
+#                             "heading_path": ["Introduction"]}
 ```
 
-When a semantic chunker produces chunks the extra context (e.g. heading
-breadcrumbs) can be stored in `KnowledgeChunk.metadata` under the
-conventional keys documented on the entity.
+**Key behaviors:**
+
+- **chunk_size is an upper bound** — short heading sections are never merged across heading boundaries
+- **chunk_overlap applies within a section only** — sections are hard semantic boundaries, no overlap between them
+- **Oversized sections** are further split by `FixedSizeChunker`, with all sub-chunks inheriting the same `heading_path`
+- **Text normalization** (BOM removal, line ending unification, ATX spacing, etc.) is handled by `isobase.utils.MarkdownFixer`
+
+### Future Strategies
+
+The `BaseChunker.chunk()` signature returns `List[ChunkSection]` — each section
+carries `content` and `metadata` (strategy name, heading path, etc.).
+`KnowledgeBaseService.index_text()` automatically stores this metadata on
+`KnowledgeChunk.metadata`.
 
 ## Storage Backends
 

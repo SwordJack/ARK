@@ -116,6 +116,9 @@ if response.tool_calls:
 # Manual test with fake embeddings (no API needed)
 python -m test.knowledge.live.run_knowledge_basic
 
+# Live smoke test with MarkdownChunker (requires MongoDB + DashScope .env)
+python -m test.knowledge.live.run_markdown_chunking
+
 # All unit tests
 python -m pytest test/knowledge/ -v
 ```

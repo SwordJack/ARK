@@ -9,7 +9,8 @@
 """
 
 from typing import Any, List, Optional
-from .base import BaseChunker
+
+from .base import BaseChunker, ChunkSection
 
 
 class FixedSizeChunker(BaseChunker):
@@ -61,7 +62,7 @@ class FixedSizeChunker(BaseChunker):
         chunk_size: Optional[int] = None,
         chunk_overlap: Optional[int] = None,
         **kwargs: Any,
-    ) -> List[str]:
+    ) -> List[ChunkSection]:
         """Splits text into fixed-size chunks with overlap.
 
         Args:
@@ -72,12 +73,12 @@ class FixedSizeChunker(BaseChunker):
                 accept additional parameters).
 
         Returns:
-            List of text chunks. Empty list if text is empty.
+            List of chunk sections. Empty list if text is empty.
 
         Example:
             >>> chunker = FixedSizeChunker(chunk_size=10, chunk_overlap=3)
             >>> chunker.chunk("0123456789abcdefghij")
-            ['0123456789', '789abcdefg', 'efghij']
+            [ChunkSection(content='0123456789', metadata={'chunk_strategy': 'fixed'}), ...]
         """
         if not text:
             return []
@@ -95,13 +96,18 @@ class FixedSizeChunker(BaseChunker):
                 f"chunk_overlap ({overlap}) must be less than chunk_size ({size})"
             )
 
-        chunks: List[str] = []
+        chunks: List[ChunkSection] = []
         start = 0
         text_len = len(text)
 
         while start < text_len:
             end = start + size
-            chunks.append(text[start:end])
+            chunks.append(
+                ChunkSection(
+                    content=text[start:end],
+                    metadata={"chunk_strategy": "fixed"},
+                )
+            )
 
             if end >= text_len:
                 break

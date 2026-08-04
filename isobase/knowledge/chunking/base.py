@@ -9,7 +9,21 @@
 """
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+
+@dataclass
+class ChunkSection:
+    """A text segment with metadata from the chunking process.
+
+    Attributes:
+        content: Text content of the chunk.
+        metadata: Additional chunk metadata such as heading path or strategy.
+    """
+
+    content: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class BaseChunker(ABC):
@@ -35,7 +49,7 @@ class BaseChunker(ABC):
         chunk_size: Optional[int] = None,
         chunk_overlap: Optional[int] = None,
         **kwargs: Any,
-    ) -> List[str]:
+    ) -> List[ChunkSection]:
         """Splits text into chunks.
 
         Args:
@@ -46,7 +60,7 @@ class BaseChunker(ABC):
                 ``heading_path`` for semantic chunkers).
 
         Returns:
-            List of text chunks.
+            List of chunk sections.
 
         Raises:
             ValueError: If text is invalid or parameters are out of range.
