@@ -233,7 +233,7 @@ class KnowledgeBaseService:
         query_embedding = self.embedding_client.embed_query(query)
 
         # Search via pipeline
-        return self._pipeline.search(knowledge_base_id, query_embedding, option)
+        return self._pipeline.search(knowledge_base_id, query_embedding, option, query_text=query)
 
     def get_document(self, document_id: str) -> KnowledgeDocument:
         """Retrieves a document by ID.

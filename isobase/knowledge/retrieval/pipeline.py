@@ -45,6 +45,7 @@ class RetrievalPipeline:
         kb_id: str,
         query_embedding: List[float],
         options: RetrievalOption,
+        query_text: Optional[str] = None,
     ) -> List[RetrievalResult]:
         """Retrieves and ranks results for the given query.
 
@@ -53,6 +54,8 @@ class RetrievalPipeline:
             query_embedding: Query vector.
             options: Retrieval options controlling candidate_k, top_k,
                 and metadata_filter.
+            query_text: Original query text, forwarded to the reranker
+                when available (required by model-based rerankers).
 
         Returns:
             Up to ``options.top_k`` ranked results, sorted by score descending.
@@ -65,7 +68,7 @@ class RetrievalPipeline:
         if options.metadata_filter:
             results = _apply_metadata_filter(results, options.metadata_filter)
 
-        reranked = self._reranker.rerank(None, results, options.top_k)
+        reranked = self._reranker.rerank(query_text, results, options.top_k)
         return reranked[: options.top_k]
 
 

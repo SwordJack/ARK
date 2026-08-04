@@ -3,7 +3,7 @@
 """Reranker hooks for knowledge retrieval pipelines.
 
 @File   :   reranker.py
-@Created:   2026/08/04 22:10 (UTC+08:00)
+@Created:   2026/08/04 22:20 (UTC+08:00)
 @Author :   SwordJack
 @Contact:   https://github.com/SwordJack/
 """
