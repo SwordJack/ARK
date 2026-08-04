@@ -10,10 +10,12 @@
 
 from .base import BaseRetriever, DenseRetrievalItem
 from .dense import DenseRetriever, cosine_similarity
+from .pipeline import RetrievalPipeline
 
 __all__ = [
     "BaseRetriever",
     "DenseRetrievalItem",
     "DenseRetriever",
     "cosine_similarity",
+    "RetrievalPipeline",
 ]

@@ -15,11 +15,13 @@ from .entities import (
     KnowledgeBase,
     KnowledgeDocument,
     KnowledgeChunk,
-    RetrievalResult
+    RetrievalResult,
+    RetrievalOption,
 )
 from .embeddings.base import BaseEmbeddingClient
 from .chunking.base import BaseChunker
 from .stores.base import BaseKnowledgeStore
+from .retrieval import RetrievalPipeline
 
 
 class KnowledgeBaseService:
@@ -61,6 +63,7 @@ class KnowledgeBaseService:
         self.store = store
         self.chunker = chunker
         self.embed_batch_size = embed_batch_size
+        self._pipeline = RetrievalPipeline(store)
 
     def create_knowledge_base(
         self,
@@ -191,6 +194,7 @@ class KnowledgeBaseService:
         query: str,
         knowledge_base_id: str,
         top_k: int = 5,
+        options: Optional[RetrievalOption] = None,
     ) -> List[RetrievalResult]:
         """Retrieves relevant chunks for a query.
 
@@ -198,6 +202,8 @@ class KnowledgeBaseService:
             query: Query text.
             knowledge_base_id: Knowledge base to search.
             top_k: Maximum number of results to return.
+            options: Fine-grained retrieval options. When None, uses
+                ``RetrievalOption(top_k=top_k)`` internally.
 
         Returns:
             List of retrieval results, sorted by relevance (score descending).
@@ -211,26 +217,23 @@ class KnowledgeBaseService:
             results = service.retrieve(
                 query="What is RAG?",
                 knowledge_base_id=kb.id,
-                top_k=3
+                option=RetrievalOption(top_k=3),
             )
             for result in results:
-                print(f"Score: {result.score:.3f}")
+                print(f"Score: {result.score:.3f}", result.score_source)
                 print(f"Content: {result.chunk.content}")
         """
         if not query:
             raise ValueError("query cannot be empty")
 
+        if options is None:
+            option = RetrievalOption(top_k=top_k)
+
         # Embed query
         query_embedding = self.embedding_client.embed_query(query)
 
-        # Search
-        results = self.store.search(
-            kb_id=knowledge_base_id,
-            query_embedding=query_embedding,
-            top_k=top_k,
-        )
-
-        return results
+        # Search via pipeline
+        return self._pipeline.search(knowledge_base_id, query_embedding, option)
 
     def get_document(self, document_id: str) -> KnowledgeDocument:
         """Retrieves a document by ID.
@@ -304,6 +307,7 @@ class KnowledgeBaseService:
         knowledge_base_id: str,
         top_k: int = 5,
         separator: str = "\n\n---\n\n",
+        options: Optional[RetrievalOption] = None,
     ) -> str:
         """Retrieves and formats results as LLM context.
 
@@ -328,7 +332,7 @@ class KnowledgeBaseService:
             )
             prompt = f"Context:\\n{context}\\n\\nQuestion: {query}\\nAnswer:"
         """
-        results = self.retrieve(query, knowledge_base_id, top_k)
+        results = self.retrieve(query, knowledge_base_id, top_k, options)
 
         if not results:
             return ""

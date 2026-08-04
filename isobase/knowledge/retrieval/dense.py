@@ -67,6 +67,7 @@ class DenseRetriever(BaseRetriever):
                 chunk=item.chunk,
                 score=cosine_similarity(query_embedding, item.embedding),
                 document=item.document,
+                score_source="dense",
             )
             for item in items
         ]

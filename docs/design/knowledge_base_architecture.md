@@ -999,7 +999,7 @@ isobase/utils/
 
 **Recommended sequence:**
 
-1. `RetrievalOptions` / retrieval pipeline interface
+1. `RetrievalOption` / retrieval pipeline interface
    - Distinguish `candidate_k` from final `top_k`
    - Define metadata filters and score source semantics
 2. Optional rerank hook

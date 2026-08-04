@@ -23,6 +23,7 @@ from .entities import (
     KnowledgeDocument,
     KnowledgeChunk,
     RetrievalResult,
+    RetrievalOption,
 )
 from .service import KnowledgeBaseService
 
@@ -31,5 +32,6 @@ __all__ = [
     "KnowledgeDocument",
     "KnowledgeChunk",
     "RetrievalResult",
+    "RetrievalOption",
     "KnowledgeBaseService",
 ]

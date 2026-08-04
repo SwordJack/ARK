@@ -9,8 +9,31 @@
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime
+
+
+@dataclass
+class RetrievalOption:
+    """Options for retrieval candidate selection and filtering.
+
+    Attributes:
+        top_k: Final number of results to return.
+        candidate_k: Number of candidates to collect before final trimming.
+            When None, defaults to top_k.
+        metadata_filter: Chunk metadata equality filters. Only chunks whose
+            metadata contains all key/value pairs are retained.
+    """
+
+    top_k: int = 5
+    candidate_k: Optional[int] = None
+    metadata_filter: Dict[str, Any] = field(default_factory=dict)
+
+    def effective_candidate_k(self) -> int:
+        """Returns the candidate count to use for the initial retrieval pass."""
+        if self.candidate_k is None:
+            return self.top_k
+        return max(self.candidate_k, self.top_k)
 
 
 @dataclass
@@ -116,11 +139,13 @@ class RetrievalResult:
         chunk: The retrieved chunk.
         score: Similarity score (higher is more relevant).
         document: Optional parent document (for displaying source).
+        score_source: Source of score semantics, e.g. ``"dense"``.
     """
 
     chunk: KnowledgeChunk
     score: float
     document: Optional[KnowledgeDocument] = None
+    score_source: str = "dense"
 
     def __str__(self) -> str:
         """Formats the result for LLM context injection.
