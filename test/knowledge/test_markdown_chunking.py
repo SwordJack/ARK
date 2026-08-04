@@ -76,6 +76,26 @@ def test_markdown_chunker_splits_large_section_with_overlap():
     assert chunks[0].content[-5:] == chunks[1].content[:5]
 
 
+def test_markdown_chunker_ignores_headings_inside_fenced_code_blocks():
+    """Headings inside fenced code blocks stay in the section body."""
+    chunker = MarkdownChunker(chunk_size=1000, chunk_overlap=0)
+    text = """# Guide
+
+```python
+# not a heading
+print('hello')
+```
+
+After.
+"""
+
+    chunks = chunker.chunk(text)
+
+    assert len(chunks) == 1
+    assert chunks[0].metadata["heading_path"] == ["Guide"]
+    assert "# not a heading" in chunks[0].content
+
+
 def test_markdown_chunker_override_size():
     """chunk_size can be overridden at call time."""
     chunker = MarkdownChunker(chunk_size=1000, chunk_overlap=0)

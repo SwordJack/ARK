@@ -85,6 +85,11 @@ class MarkdownFixer:
         return result
 
     @classmethod
+    def is_fence_line(cls, line: str) -> bool:
+        """Return whether a line starts a fenced code block delimiter."""
+        return cls._TILDE_FENCE_RE.match(line) is not None
+
+    @classmethod
     def _normalize_fences(cls, text: str) -> str:
         """Convert tildes to backticks and lowercase info-strings on opening fences."""
         lines = text.split("\n")
