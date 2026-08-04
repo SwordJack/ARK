@@ -4,7 +4,10 @@ from isobase.llm.providers import BaseLLMClient, LLMClient, OpenAIChat, Anthropi
 from isobase.llm.tools import FunctionTool, ToolSet
 from isobase.llm.callbacks import BaseLLMCallback
 from isobase.llm.entities import (
+    LLMMessage,
+    LLMMessageHistory,
     LLMResponse,
+    MessageContentBlock,
     SearchResult,
     SearchResultItem,
     TokenUsage,
@@ -17,7 +20,10 @@ __all__ = [
     "BaseLLMClient",
     "FunctionTool",
     "LLMClient",
+    "LLMMessage",
+    "LLMMessageHistory",
     "LLMResponse",
+    "MessageContentBlock",
     "OpenAIChat",
     "SearchResult",
     "SearchResultItem",

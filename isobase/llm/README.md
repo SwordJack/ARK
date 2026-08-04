@@ -11,6 +11,7 @@ The design goal is that swapping providers should not change calling code: tools
 ## Features
 
 - **Provider-neutral surface**: `OpenAIChat` and `AnthropicMessages` share the same public methods and return the same `LLMResponse`, so they are drop-in interchangeable.
+- **Provider-neutral message history**: `LLMMessage`, `MessageContentBlock`, and `LLMMessageHistory` let you save and transfer conversation history between providers. Each provider can convert neutral messages to and from its native wire format via `from_neutral_message` / `to_neutral_message` — the same bidirectional pattern used by `ToolCall`.
 - **Neutral tool format with auto-generated schemas**: a single `FunctionTool` can automatically extract its `name`, `description`, and JSON `parameters_schema` directly from the signature and docstring of a mapped Python callable. It gracefully ignores variadic parameters (`*args`, `**kwargs`) to prevent LLM hallucination. No vendor format is treated as the canonical one, and providers translate the neutral `ToolCall` on the fly.
 - **Multi-turn tool calling orchestration**: `ask()` runs a bounded recursive tool-calling loop (`max_tool_rounds`), automatically executing Python callables and feeding results back to the model. Includes a strict fallback mechanism that forces a final plain-text summary if the tool recursion limit is hit, preventing infinite loops and silent blank responses.
 - **Strict proxy resilience**: History reconstruction ensures perfect compliance with stringent enterprise API proxies, preserving explicit `null` contents and perfectly pairing Anthropic's parallel `tool_use` and `tool_result` content blocks.
@@ -141,10 +142,45 @@ print(resp.reasoning_content)  # thinking text
 print(resp.content)            # final answer
 ```
 
+### 5. Provider-Neutral Message History
+
+Conversation history can be saved in a provider-neutral format and transferred between providers. This is the same bidirectional pattern as `ToolCall` — each provider converts neutral messages to and from its native wire format.
+
+```python
+from isobase.llm import (
+    AnthropicMessages, OpenAIChat,
+    LLMMessage, LLMMessageHistory, MessageContentBlock, ToolCall,
+)
+
+# --- Build a neutral history (any provider) ---
+history = LLMMessageHistory()
+history.append(LLMMessage(role="user", content="What's the weather in Paris?"))
+history.append(LLMMessage(role="assistant", content=[
+    MessageContentBlock(type="text", text="Let me check."),
+    MessageContentBlock(type="tool_use",
+        tool_call=ToolCall(id="c1", name="get_weather", arguments='{"city":"Paris"}')),
+]))
+
+# --- Serialise to JSON for persistence ---
+saved = history.to_list()
+
+# --- Reload on OpenAI ---
+reloaded = LLMMessageHistory.from_list(saved)
+openai = OpenAIChat(api_key="sk-...")
+openai_msgs = [OpenAIChat.from_neutral_message(m) for m in reloaded.messages]
+resp = openai.ask("Based on that tool call, answer me.", stream=False)
+
+# --- Or switch to Anthropic (system prompt extracted automatically) ---
+anthropic = AnthropicMessages(api_key="sk-ant-...")
+anthropic_msgs, system_prompt = AnthropicMessages.from_neutral_history(reloaded)
+anthropic.instructions = system_prompt
+resp = anthropic.ask("Based on that tool call, answer me.", stream=False)
+```
+
 ## Module Structure
 
-- `entities.py` — `LLMResponse`, `TokenUsage`, and `ToolCall` dataclasses; the standardized provider-neutral data types used for inputs and returns.
-- `providers/base.py` — `BaseLLMClient` abstract interface (`ask`, `generate`, `generate_stream`) plus `build_user_message_content` for multimodal messages.
+- `entities.py` — `LLMMessage`, `LLMMessageHistory`, `MessageContentBlock`, `LLMResponse`, `TokenUsage`, and `ToolCall` dataclasses; the standardized provider-neutral data types used for inputs and returns.
+- `providers/base.py` — `BaseLLMClient` abstract interface (`ask`, `generate`, `generate_stream`, `from_neutral_message`, `to_neutral_message`, `from_neutral_history`) plus `build_user_message_content` for multimodal messages.
 - `providers/openai_chat.py` — `OpenAIChat`, the OpenAI Chat Completion compatible client.
 - `providers/anthropic_messages.py` — `AnthropicMessages`, the Anthropic Messages compatible client (named after the Messages API, mirroring how `OpenAIChat` is named after the Chat Completion API).
 - `tools/base.py` — `FunctionTool`, `ToolSet`; the neutral tool representation and execution engine.
@@ -152,7 +188,7 @@ print(resp.content)            # final answer
 
 Image helpers live in `isobase/core/image_service.py` (`convert_image_to_data_url` for OpenAI, `convert_image_to_base64` for Anthropic).
 
-Manual live API smoke tests (not run by pytest) live in `test/llm/live/` — copy `.env.example` to `.env`, fill in credentials, and run `python -m test.llm.live.run_llm_basic`.
+Manual live API smoke tests (not run by pytest) live in `test/llm/live/` — copy `.env.example` to `.env`, fill in credentials, and run `python -m test.llm.live.run_llm_basic` or `python -m test.llm.live.run_message_conversion`.
 
 ## Status
 
@@ -164,8 +200,9 @@ Manual live API smoke tests (not run by pytest) live in `test/llm/live/` — cop
 - Neutral `FunctionTool` with bidirectional OpenAI/Anthropic schema conversion and a shared execution core (`ToolSet.execute_tool_calls` / `execute_tool_calls_anthropic`).
 - Knowledge-base search tool integration via `isobase.llm.tools.knowledge.create_knowledge_search_tool`.
 - `SearchTool` with dual-architecture internet search (native provider search + custom fallback via `TavilySearchProvider` / `BraveSearchProvider`).
+- Neutral message history (`LLMMessage` / `LLMMessageHistory` / `MessageContentBlock`) with provider-native bidirectional conversion (`from_neutral_message` / `to_neutral_message` / `from_neutral_history`), JSON serialisation, and cross-provider conversation transfer.
 - `BaseLLMCallback` — execution callbacks for tracking tool progress in real time.
-- Unit tests mocking each SDK (`test/llm/providers/`), plus a manual live runner (`test/llm/live/`).
+- Unit tests mocking each SDK (`test/llm/providers/`), message conversion tests (`test/llm/providers/test_message_conversion.py`), plus a manual live runner (`test/llm/live/run_message_conversion.py`).
 
 ### Not yet done (future)
 

@@ -11,6 +11,7 @@
 ## 功能特性
 
 - **厂商中立的统一接口**：`OpenAIChat` 与 `AnthropicMessages` 共享相同的公开方法、返回相同的 `LLMResponse`，可直接互换。
+- **厂商中立的消息历史**：`LLMMessage`、`MessageContentBlock` 和 `LLMMessageHistory` 允许你保存对话历史并在不同 provider 之间转移。每个 provider 都能通过 `from_neutral_message` / `to_neutral_message` 在中立格式和自身原生格式之间双向转换——与 `ToolCall` 的双向转换模式一致。
 - **中立工具格式与自动 Schema 生成**：单个 `FunctionTool` 可直接从绑定的 Python 函数的签名（Signature）和文档字符串（Docstring）中**自动提取**其 `name`、`description` 和 JSON `parameters_schema`。在自动生成期间，它会优雅地跳过不定长参数（`*args`、`**kwargs`）以防止引发模型幻觉。不把任何一家的格式当作唯一标准，各提供商的客户端在发送请求前自动将中立的 `ToolCall` 即时翻译为自身需要的格式。
 - **多轮工具调用编排**：`ask()` 运行一个有上限的递归工具调用循环（`max_tool_rounds`），自动执行 Python 可调用对象并把结果回传给模型。内置了严格的兜底机制，如果在循环触达上限时模型仍在尝试调用工具，框架将强制切断工具并要求模型进行最终的纯文本总结，彻底防止空回复和死循环黑洞。
 - **严苛网关兼容与历史重建**：在重建对话历史时，完美适配要求极为严苛的企业级 API 代理中转站。包括显式保留空的 `content`（使用 `null` 占位），以及精确对齐并拼接 Anthropic 并发输出的 `tool_use` 与 `tool_result` 内容块。
@@ -142,10 +143,45 @@ print(resp.reasoning_content)  # 思考文本
 print(resp.content)            # 最终回答
 ```
 
+### 5. 厂商中立的消息历史
+
+对话历史可以保存为厂商中立格式，也可以在不同 provider 之间转移。这与 `ToolCall` 的双向转换模式一致——每个 provider 都能在中立格式和自身原生格式之间互转。
+
+```python
+from isobase.llm import (
+    AnthropicMessages, OpenAIChat,
+    LLMMessage, LLMMessageHistory, MessageContentBlock, ToolCall,
+)
+
+# --- 构建中立历史（任意 provider）---
+history = LLMMessageHistory()
+history.append(LLMMessage(role="user", content="巴黎的天气怎么样？"))
+history.append(LLMMessage(role="assistant", content=[
+    MessageContentBlock(type="text", text="让我查一下。"),
+    MessageContentBlock(type="tool_use",
+        tool_call=ToolCall(id="c1", name="get_weather", arguments='{"city":"Paris"}')),
+]))
+
+# --- 序列化为 JSON 以便持久保存 ---
+saved = history.to_list()
+
+# --- 在 OpenAI 上重新加载 ---
+reloaded = LLMMessageHistory.from_list(saved)
+openai = OpenAIChat(api_key="sk-...")
+openai_msgs = [OpenAIChat.from_neutral_message(m) for m in reloaded.messages]
+resp = openai.ask("结合刚才的工具调用结果回答我。", stream=False)
+
+# --- 或切换到 Anthropic（system 自动提取至顶层参数）---
+anthropic = AnthropicMessages(api_key="sk-ant-...")
+anthropic_msgs, system_prompt = AnthropicMessages.from_neutral_history(reloaded)
+anthropic.instructions = system_prompt
+resp = anthropic.ask("结合刚才的工具调用结果回答我。", stream=False)
+```
+
 ## 模块结构
 
-- `entities.py` —— `LLMResponse`、`TokenUsage` 与 `ToolCall` 数据类；用作输入和每个客户端方法的标准化返回类型。
-- `providers/base.py` —— `BaseLLMClient` 抽象接口（`ask`、`generate`、`generate_stream`）以及用于多模态消息的 `build_user_message_content`。
+- `entities.py` —— `LLMMessage`、`LLMMessageHistory`、`MessageContentBlock`、`LLMResponse`、`TokenUsage` 与 `ToolCall` 数据类；用作输入和每个客户端方法的标准化返回类型。
+- `providers/base.py` —— `BaseLLMClient` 抽象接口（`ask`、`generate`、`generate_stream`、`from_neutral_message`、`to_neutral_message`、`from_neutral_history`）以及用于多模态消息的 `build_user_message_content`。
 - `providers/openai_chat.py` —— `OpenAIChat`，OpenAI Chat Completion 兼容客户端。
 - `providers/anthropic_messages.py` —— `AnthropicMessages`，Anthropic Messages 兼容客户端（按其对接的 Messages API 命名，与 `OpenAIChat` 按 Chat Completion API 命名同理）。
 - `tools/base.py` —— `FunctionTool` 与 `ToolSet`；中立工具表示及执行引擎。
@@ -153,7 +189,7 @@ print(resp.content)            # 最终回答
 
 图像辅助函数位于 `isobase/core/image_service.py`（`convert_image_to_data_url` 供 OpenAI，`convert_image_to_base64` 供 Anthropic）。
 
-手动真实 API 冒烟测试（不由 pytest 收集）位于 `test/llm/live/` —— 把 `.env.example` 复制为 `.env`、填入凭据，运行 `python -m test.llm.live.run_llm_basic`。
+手动真实 API 冒烟测试（不由 pytest 收集）位于 `test/llm/live/` —— 把 `.env.example` 复制为 `.env`、填入凭据，运行 `python -m test.llm.live.run_llm_basic` 或 `python -m test.llm.live.run_message_conversion`。
 
 ## 进度
 
@@ -165,8 +201,9 @@ print(resp.content)            # 最终回答
 - 中立 `FunctionTool`，含 OpenAI/Anthropic schema 双向转化与共享的执行核（`ToolSet.execute_tool_calls` / `execute_tool_calls_anthropic`）。
 - 通过 `isobase.llm.tools.knowledge.create_knowledge_search_tool` 集成知识库检索工具。
 - `SearchTool` 双引擎架构联网搜索（原生提供商搜索 + 自定义搜索引擎回退 `TavilySearchProvider` / `BraveSearchProvider`）。
+- 厂商中立的消息历史（`LLMMessage` / `LLMMessageHistory` / `MessageContentBlock`），支持与 provider 原生格式的双向转换（`from_neutral_message` / `to_neutral_message` / `from_neutral_history`）、JSON 序列化以及跨 provider 的对话转移。
 - `BaseLLMCallback` — 执行回调钩子，可实时追踪工具执行进度。
-- 对各 SDK 打桩的单元测试（`test/llm/providers/`），以及一个手动真实联调脚本（`test/llm/live/`）。
+- 对各 SDK 打桩的单元测试（`test/llm/providers/`），消息转换测试（`test/llm/providers/test_message_conversion.py`），以及手动真实联调脚本（`test/llm/live/run_message_conversion.py`）。
 
 ### 尚未完成（以后做）
 
