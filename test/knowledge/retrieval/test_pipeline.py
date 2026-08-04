@@ -1,6 +1,6 @@
 #! python3
 # -*- encoding: utf-8 -*-
-"""Tests for RetrievalOption and RetrievalPipeline.
+"""Tests for RetrievalOption, RetrievalPipeline, and reranker hooks.
 
 @File   :   test_pipeline.py
 @Created:   2026/08/04 21:50 (UTC+08:00)
@@ -14,7 +14,7 @@ from isobase.knowledge.entities import (
     KnowledgeDocument,
     RetrievalOption,
 )
-from isobase.knowledge.retrieval import RetrievalPipeline
+from isobase.knowledge.retrieval import BaseReranker, NoOpReranker, RetrievalPipeline
 from isobase.knowledge.stores import MemoryKnowledgeStore
 
 
@@ -146,3 +146,70 @@ def test_pipeline_metadata_filter_no_match_returns_empty():
         RetrievalOption(top_k=5, metadata_filter={"key": "nonexistent"}),
     )
     assert results == []
+
+
+# ---- Reranker ------------------------------------------------------------
+
+def test_noop_reranker_preserves_order():
+    """NoOpReranker preserves ordering and trims to top_k."""
+    from isobase.knowledge.entities import RetrievalResult
+
+    c0 = KnowledgeChunk(id="c0", document_id="d1", knowledge_base_id="kb1", content="a", index=0)
+    c1 = KnowledgeChunk(id="c1", document_id="d1", knowledge_base_id="kb1", content="b", index=1)
+    results = [
+        RetrievalResult(chunk=c0, score=0.9, score_source="dense"),
+        RetrievalResult(chunk=c1, score=0.3, score_source="dense"),
+    ]
+    reranker = NoOpReranker()
+    out = reranker.rerank(None, results, 2)
+    assert len(out) == 2
+    assert out[0].chunk.id == "c0"
+    assert out[1].chunk.id == "c1"
+
+
+def test_noop_reranker_trims():
+    """NoOpReranker trims to top_k."""
+    from isobase.knowledge.entities import RetrievalResult
+
+    chunks = [
+        KnowledgeChunk(id=f"c{i}", document_id="d1", knowledge_base_id="kb1", content=str(i), index=i)
+        for i in range(5)
+    ]
+    results = [
+        RetrievalResult(chunk=c, score=1.0 - i * 0.1, score_source="dense")
+        for i, c in enumerate(chunks)
+    ]
+    reranker = NoOpReranker()
+    out = reranker.rerank(None, results, 3)
+    assert len(out) == 3
+    assert [r.chunk.id for r in out] == ["c0", "c1", "c2"]
+
+
+def test_pipeline_with_default_reranker_is_noop():
+    """Default pipeline uses NoOpReranker — behavior unchanged."""
+    store = _seed_store()
+    pipeline = RetrievalPipeline(store)  # no explicit reranker
+    query_embedding = [10.0, 0.0]
+
+    results = pipeline.search("kb1", query_embedding, RetrievalOption(top_k=3))
+    assert len(results) == 3
+    assert results[0].chunk.id == "c0"
+    assert results[0].score_source == "dense"
+
+
+def test_pipeline_with_custom_reranker():
+    """A custom reranker can reorder and its output is final-trimmed."""
+    store = _seed_store()
+    query_embedding = [10.0, 0.0]
+
+    class _ReverseReranker(BaseReranker):
+        def rerank(self, query, results, top_k):
+            return list(reversed(results[:top_k]))
+
+    pipeline = RetrievalPipeline(store, reranker=_ReverseReranker())
+    results = pipeline.search("kb1", query_embedding, RetrievalOption(top_k=3))
+
+    assert len(results) == 3
+    # Dense order: c0 (score 1.0), c1 (0.8), c2 (0.6)
+    # Reverse: c2, c1, c0
+    assert [r.chunk.id for r in results] == ["c2", "c1", "c0"]

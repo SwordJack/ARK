@@ -8,10 +8,11 @@
 @Contact:   https://github.com/SwordJack/
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from ..entities import RetrievalOption, RetrievalResult
 from ..stores.base import BaseKnowledgeStore
+from .reranker import BaseReranker, NoOpReranker
 
 
 class RetrievalPipeline:
@@ -24,13 +25,20 @@ class RetrievalPipeline:
     or candidate/final_k — the pipeline handles all of that.
     """
 
-    def __init__(self, store: BaseKnowledgeStore) -> None:
+    def __init__(
+        self,
+        store: BaseKnowledgeStore,
+        reranker: Optional[BaseReranker] = None,
+    ) -> None:
         """Creates a pipeline for the given store.
 
         Args:
             store: Knowledge store backend.
+            reranker: Optional post-retrieval reranker. Defaults to
+                ``NoOpReranker`` to preserve dense-only behavior.
         """
         self._store = store
+        self._reranker = reranker or NoOpReranker()
 
     def search(
         self,
@@ -57,7 +65,8 @@ class RetrievalPipeline:
         if options.metadata_filter:
             results = _apply_metadata_filter(results, options.metadata_filter)
 
-        return results[: options.top_k]
+        reranked = self._reranker.rerank(None, results, options.top_k)
+        return reranked[: options.top_k]
 
 
 def _apply_metadata_filter(

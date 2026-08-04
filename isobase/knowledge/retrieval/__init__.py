@@ -11,6 +11,7 @@
 from .base import BaseRetriever, DenseRetrievalItem
 from .dense import DenseRetriever, cosine_similarity
 from .pipeline import RetrievalPipeline
+from .reranker import BaseReranker, NoOpReranker
 
 __all__ = [
     "BaseRetriever",
@@ -18,4 +19,6 @@ __all__ = [
     "DenseRetriever",
     "cosine_similarity",
     "RetrievalPipeline",
+    "BaseReranker",
+    "NoOpReranker",
 ]
