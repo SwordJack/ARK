@@ -3,20 +3,19 @@
 - 汉语 [QUICKSTART.zh-cn.md](QUICKSTART.zh-cn.md)
 - English [QUICKSTART.md](QUICKSTART.md)
 
-## Installation
+## 安装
 
-IsoBase knowledge module is included in the main package. No additional
-dependencies are required for the basic path (memory store, dense retrieval).
+IsoBase 知识库模块已包含在主包中，基本路径（内存存储、稠密检索）无需额外依赖。
 
-For production use with real embedding APIs or rerank models:
+如需使用真实嵌入 API 或重排序模型：
 
 ```bash
 pip install openai
 ```
 
-## 5-Minute Quick Start
+## 5 分钟快速上手
 
-### 1. Fake Embeddings (no API calls)
+### 1. 虚拟嵌入（无需 API 调用）
 
 ```python
 from isobase.knowledge import KnowledgeBaseService
@@ -39,13 +38,13 @@ service = KnowledgeBaseService(
     chunker=FixedSizeChunker(chunk_size=512, chunk_overlap=50),
 )
 
-kb = service.create_knowledge_base(name="My Knowledge Base")
-service.index_text(kb.id, "RAG is a technique for LLMs.", title="Doc 1")
-results = service.retrieve("What is RAG?", kb.id, top_k=3)
+kb = service.create_knowledge_base(name="我的知识库")
+service.index_text(kb.id, "RAG 是面向 LLM 的检索增强技术。", title="文档 1")
+results = service.retrieve("什么是 RAG？", kb.id, top_k=3)
 print(results[0].chunk.content)
 ```
 
-### 2. Production Setup (Real Embedding APIs)
+### 2. 生产环境（真实嵌入 API）
 
 ```python
 from isobase.knowledge import KnowledgeBaseService
@@ -53,12 +52,12 @@ from isobase.knowledge.chunking import FixedSizeChunker
 from isobase.knowledge.embeddings import OpenAIEmbeddingClient
 from isobase.knowledge.stores import MemoryKnowledgeStore
 
-# Pick one provider:
+# 任选一家：
 client = OpenAIEmbeddingClient(
     api_key="...",
     base_url="https://api.aimlapi.com/v1",          # AIMLAPI
     # base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",  # DashScope
-    model="alibaba/qwen-text-embedding-v4",          # or "text-embedding-v4"
+    model="alibaba/qwen-text-embedding-v4",          # 或 "text-embedding-v4"
     dimensions=1024,
 )
 
@@ -69,47 +68,47 @@ service = KnowledgeBaseService(
 )
 ```
 
-## Retrieval Modes
+## 检索模式
 
-### Dense (default)
+### 稠密检索（默认）
 
 ```python
-results = service.retrieve("What is RAG?", kb.id, top_k=5)
+results = service.retrieve("什么是 RAG？", kb.id, top_k=5)
 ```
 
-### Sparse (BM25)
+### 稀疏检索 (BM25)
 
 ```python
 from isobase.knowledge.entities import RetrievalOption
 
 results = service.retrieve(
-    "What is RAG?", kb.id,
+    "什么是 RAG？", kb.id,
     options=RetrievalOption(top_k=5, use_sparse=True),
 )
 ```
 
-### Hybrid (Dense + Sparse + RRF Fusion)
+### 混合检索（稠密 + 稀疏 + RRF 融合）
 
 ```python
 results = service.retrieve(
-    "What is RAG?", kb.id,
+    "什么是 RAG？", kb.id,
     options=RetrievalOption(top_k=5, use_hybrid=True),
 )
 ```
 
-### With Metadata Filter
+### 带元数据过滤
 
 ```python
 results = service.retrieve(
-    "function", kb.id,
+    "函数", kb.id,
     options=RetrievalOption(
         top_k=5,
-        metadata_filter={"heading_path": ["Installation"]},
+        metadata_filter={"heading_path": ["安装说明"]},
     ),
 )
 ```
 
-### With Reranker
+### 带重排序器
 
 ```python
 from isobase.knowledge.retrieval import RetrievalPipeline
@@ -122,11 +121,11 @@ reranker = OpenAIReranker(
 )
 service._pipeline = RetrievalPipeline(service.store, reranker=reranker)
 
-results = service.retrieve("What is RAG?", kb.id, top_k=5)
-# results have score_source="rerank"
+results = service.retrieve("什么是 RAG？", kb.id, top_k=5)
+# 结果 score_source="rerank"
 ```
 
-## Using Low-Level Retrieval Components
+## 使用底层检索组件
 
 ```python
 from isobase.knowledge.retrieval import (
@@ -136,24 +135,24 @@ from isobase.knowledge.retrieval import (
     curated_stopwords,
 )
 
-# BM25 sparse retrieval
+# BM25 稀疏检索
 retriever = SparseRetriever(
     k1=1.5, b=0.75,
     stopwords=curated_stopwords(),
 )
 items = [SparseRetrievalItem(chunk=c, document=doc) for c, doc in get_my_chunks()]
-sparse_results = retriever.retrieve("query text", items, top_k=5)
+sparse_results = retriever.retrieve("查询文本", items, top_k=5)
 
-# RRF fusion (combine with dense results from store)
+# RRF 融合（与 store 的稠密结果合并）
 fusion = RankFusion(k=60)
 fused = fusion.fuse(dense_results, sparse_results, top_k=10)
-# fused results have score_source="fused"
+# 融合结果 score_source="fused"
 ```
 
-## Storage Backends
+## 存储后端
 
 ```python
-# Memory (dev / testing)
+# 内存（开发 / 测试）
 from isobase.knowledge.stores import MemoryKnowledgeStore
 store = MemoryKnowledgeStore()
 
@@ -167,7 +166,7 @@ from isobase.knowledge.stores import MongoKnowledgeStore
 store = MongoKnowledgeStore()
 ```
 
-## LLM Integration
+## LLM 集成
 
 ```python
 from isobase.llm.tools import ToolSet
@@ -176,37 +175,37 @@ from isobase.llm.tools.knowledge import create_knowledge_search_tool
 toolset = ToolSet()
 toolset.add_tool(create_knowledge_search_tool(service, kb.id, top_k=3))
 
-client.ask("What is RAG?", tools=list(toolset))
+client.ask("什么是 RAG？", tools=list(toolset))
 ```
 
-## Run Examples
+## 运行示例
 
 ```bash
-# Unit tests (no API keys required)
+# 单元测试（无需 API 密钥）
 python -m pytest test/knowledge/ -v
 
-# Fake embeddings — no API or database required
+# 虚拟嵌入 — 无需 API 或数据库
 python -m test.knowledge.live.run_knowledge_basic
 
-# --- Live smoke tests (require API keys and/or databases) ---
+# --- 以下联调测试需要 API 密钥和/或数据库 ---
 
-# Markdown chunker live test
+# Markdown 分块器联调测试
 python -m test.knowledge.live.run_markdown_chunking
-# Prerequisites: .env with DASHSCOPE_API_KEY, MongoDB accessible at localhost:27017
+# 运行条件：.env 中配置 DASHSCOPE_API_KEY，localhost:27017 可访问 MongoDB
 
-# Reranker live test
+# 重排序器联调测试
 python -m test.knowledge.live.run_reranker
-# Prerequisites: .env with EMBEDDING_API_KEY, RERANK_API_KEY, RERANK_BASE_URL
+# 运行条件：.env 中配置 EMBEDDING_API_KEY、RERANK_API_KEY、RERANK_BASE_URL
 
-# Lifecycle live tests
+# 生命周期联调测试
 python -m test.knowledge.live.run_lifecycle_sql
-# Prerequisites: PostgreSQL accessible at localhost:5432
+# 运行条件：localhost:5432 可访问 PostgreSQL
 
 python -m test.knowledge.live.run_lifecycle_mongo
-# Prerequisites: MongoDB accessible at localhost:27017
+# 运行条件：localhost:27017 可访问 MongoDB
 ```
 
-## Common Issues
+## 常见问题
 
 ### ModuleNotFoundError: No module named 'openai'
 
@@ -214,16 +213,15 @@ python -m test.knowledge.live.run_lifecycle_mongo
 pip install openai
 ```
 
-### No results from hybrid / sparse search
+### 混合 / 稀疏检索无结果
 
-Sparse and hybrid modes require knowledge to have been indexed **with
-`query_text` metadata**. The default `KnowledgeBaseService.retrieve()`
-auto-embeds the query and passes both `query_embedding` and `query_text`
-when needed.
+稀疏和混合检索需要知识库在索引时已嵌入文本。默认的 `KnowledgeBaseService.retrieve()` 会自动对查询文本进行嵌入，需要时同时传递 `query_embedding` 和 `query_text`。
 
-### Empty search results
+### 检索结果为空
 
-1. Documents were indexed: `service.index_text(kb.id, ...)`
-2. Query string is not empty
-3. Knowledge base ID is correct
-4. Embedding dimensions match between client and store
+请检查：
+
+1. 文档是否已索引：`service.index_text(kb.id, ...)`
+2. 查询字符串是否非空
+3. 知识库 ID 是否正确
+4. 嵌入维度是否在客户端与存储间匹配
