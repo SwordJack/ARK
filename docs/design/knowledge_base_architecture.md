@@ -487,6 +487,13 @@ class MarkdownChunker(BaseChunker):
 
 ### 4.5 Knowledge Store (`stores/base.py`)
 
+Chunks and embeddings are intentionally modeled as separate storage records.
+A chunk is the stable textual retrieval unit; an embedding is one vector
+representation of that chunk. This keeps the text/content lifecycle independent
+from vector generation and lets the same chunk carry multiple embedding variants
+later, such as different embedding models, dimensions, or model versions,
+without duplicating chunk content.
+
 ```python
 from abc import ABC, abstractmethod
 from typing import List
