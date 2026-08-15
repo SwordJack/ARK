@@ -256,6 +256,8 @@ isobase/knowledge/
 - 作为向量嵌入
 - 通过相似性搜索检索
 
+Chunk 与 embedding 分开存储是有意设计。Chunk 是稳定的文本检索单元；embedding 是该 chunk 的一种向量表示。如此分离设计，同一个 chunk 可以随时间挂载多个 embedding 变体，例如不同嵌入模型、维度或模型版本，而不需要重复存储 chunk 内容。
+
 ### 检索结果
 
 包含以下内容的搜索结果：

@@ -267,6 +267,12 @@ Unit of retrieval:
 - Embedded as vector
 - Retrieved by similarity search
 
+Chunks and embeddings are stored as separate records by design. A chunk is the
+stable textual retrieval unit; an embedding is one vector representation of that
+chunk. Keeping them separate allows the same chunk to carry multiple embedding
+variants over time, such as different embedding models, dimensions, or model
+versions, without duplicating chunk content.
+
 ### Retrieval Result
 
 Search result containing:
