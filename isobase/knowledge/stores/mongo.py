@@ -10,6 +10,7 @@
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from bson import ObjectId
 
 from isobase.database.mongo import MongoDbModel, MongoDbService, mongo_db
 
@@ -296,6 +297,23 @@ class MongoKnowledgeStore(BaseKnowledgeStore):
             raise KeyError(f"Document {doc_id} not found")
         return self._model_to_doc(model)
 
+    def get_documents(self, doc_ids: List[str]) -> Dict[str, KnowledgeDocument]:
+        """Retrieves multiple documents by ID."""
+        object_ids = []
+        for doc_id in dict.fromkeys(doc_ids):
+            try:
+                object_ids.append(ObjectId(doc_id))
+            except Exception:
+                continue
+
+        if not object_ids:
+            return {}
+
+        models = KnowledgeDocumentMongoModel.find_many(
+            {"_id": {"$in": object_ids}},
+        )
+        return {model.id: self._model_to_doc(model) for model in models}
+
     def list_documents(self, kb_id: str) -> list[KnowledgeDocument]:
         """Lists all documents in a knowledge base.
 
@@ -413,21 +431,20 @@ class MongoKnowledgeStore(BaseKnowledgeStore):
             Empty list if knowledge base is empty or has no chunks.
         """
         chunks = KnowledgeChunkMongoModel.find_many({"knowledge_base_id": kb_id})
+        chunks = [self._model_to_chunk(chunk_model) for chunk_model in chunks]
+        documents = self.get_documents([chunk.document_id for chunk in chunks])
         items = []
-        for chunk_model in chunks:
+        for chunk in chunks:
             embedding_model = KnowledgeEmbeddingMongoModel.find_one(
-                {"chunk_id": chunk_model.id},
+                {"chunk_id": chunk.id},
             )
             if embedding_model is None:
                 continue
 
-            chunk = self._model_to_chunk(chunk_model)
-            doc_model = KnowledgeDocumentMongoModel.find_by_id(chunk.document_id)
-            doc = self._model_to_doc(doc_model) if doc_model is not None else None
             items.append(DenseRetrievalItem(
                 chunk=chunk,
                 embedding=embedding_model.embedding,
-                document=doc,
+                document=documents.get(chunk.document_id),
             ))
 
         return self.retriever.retrieve(

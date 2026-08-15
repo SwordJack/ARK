@@ -162,6 +162,14 @@ class MemoryKnowledgeStore(BaseKnowledgeStore):
             raise KeyError(f"Document {doc_id} not found")
         return self.documents[doc_id]
 
+    def get_documents(self, doc_ids: List[str]) -> Dict[str, KnowledgeDocument]:
+        """Retrieves multiple documents by ID."""
+        return {
+            doc_id: self.documents[doc_id]
+            for doc_id in dict.fromkeys(doc_ids)
+            if doc_id in self.documents
+        }
+
     def list_documents(self, kb_id: str) -> list[KnowledgeDocument]:
         """Lists all documents in a knowledge base.
 

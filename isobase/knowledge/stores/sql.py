@@ -10,7 +10,7 @@
 
 import json
 import uuid
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, select
 from sqlalchemy.orm import DeclarativeBase
@@ -261,6 +261,17 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
             raise KeyError(f"Document {doc_id} not found")
         return self._model_to_doc(model)
 
+    def get_documents(self, doc_ids: List[str]) -> Dict[str, KnowledgeDocument]:
+        """Retrieves multiple documents by ID."""
+        unique_ids = list(dict.fromkeys(doc_ids))
+        if not unique_ids:
+            return {}
+
+        rows = KnowledgeDocumentModel.find_many(
+            KnowledgeDocumentModel.id.in_(unique_ids),
+        )
+        return {row.id: self._model_to_doc(row) for row in rows}
+
     def list_documents(self, kb_id: str) -> list[KnowledgeDocument]:
         """Lists all documents in a knowledge base.
 
@@ -404,17 +415,15 @@ class SqlKnowledgeStore(BaseKnowledgeStore):
                 .where(KnowledgeChunkModel.knowledge_base_id == kb_id)
             ).all()
 
+            chunks = [self._model_to_chunk(chunk_model) for chunk_model, _ in rows]
+            documents = self.get_documents([chunk.document_id for chunk in chunks])
+
             items = []
-            for chunk_model, embedding_model in rows:
-                chunk = self._model_to_chunk(chunk_model)
-                doc_model = session.get(KnowledgeDocumentModel, chunk.document_id)
-                doc = None
-                if doc_model is not None:
-                    doc = self._model_to_doc(doc_model)
+            for chunk, (_, embedding_model) in zip(chunks, rows):
                 items.append(DenseRetrievalItem(
                     chunk=chunk,
                     embedding=json.loads(embedding_model.embedding),
-                    document=doc,
+                    document=documents.get(chunk.document_id),
                 ))
 
         return self.retriever.retrieve(

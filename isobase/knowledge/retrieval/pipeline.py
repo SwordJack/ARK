@@ -158,10 +158,14 @@ class RetrievalPipeline:
             Sparse retrieval results sorted by descending BM25 score.
         """
         items: List[SparseRetrievalItem] = []
-        for chunk in self.store.list_chunks(kb_id):
-            document = self.store.get_document(chunk.document_id)
+        chunks = self.store.list_chunks(kb_id)
+        documents = self.store.get_documents([chunk.document_id for chunk in chunks])
+        for chunk in chunks:
             items.append(
-                SparseRetrievalItem(chunk=chunk, document=document)
+                SparseRetrievalItem(
+                    chunk=chunk,
+                    document=documents.get(chunk.document_id),
+                )
             )
         return self.sparse_retriever.retrieve(query_text, items, top_k)
 
