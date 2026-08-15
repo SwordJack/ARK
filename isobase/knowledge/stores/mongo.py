@@ -430,8 +430,8 @@ class MongoKnowledgeStore(BaseKnowledgeStore):
             List of retrieval results, sorted by score descending.
             Empty list if knowledge base is empty or has no chunks.
         """
-        chunks = KnowledgeChunkMongoModel.find_many({"knowledge_base_id": kb_id})
-        chunks = [self._model_to_chunk(chunk_model) for chunk_model in chunks]
+        chunk_models = KnowledgeChunkMongoModel.find_many({"knowledge_base_id": kb_id})
+        chunks = [self._model_to_chunk(chunk_model) for chunk_model in chunk_models]
         documents = self.get_documents([chunk.document_id for chunk in chunks])
         items = []
         for chunk in chunks:
