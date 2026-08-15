@@ -9,7 +9,7 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Dict, List
 from ..entities import KnowledgeBase, KnowledgeDocument, KnowledgeChunk, RetrievalResult
 
 
@@ -105,6 +105,18 @@ class BaseKnowledgeStore(ABC):
 
         Raises:
             KeyError: If document not found.
+        """
+        pass
+
+    @abstractmethod
+    def get_documents(self, doc_ids: List[str]) -> Dict[str, KnowledgeDocument]:
+        """Retrieves multiple documents by ID.
+
+        Args:
+            doc_ids: Document identifiers. Duplicate ids are ignored.
+
+        Returns:
+            Mapping of found document id to document. Missing ids are omitted.
         """
         pass
 
